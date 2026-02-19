@@ -7,6 +7,8 @@ use fuzzy_matcher::FuzzyMatcher;
 use gpui::prelude::*;
 use gpui::InteractiveElement;
 use gpui::*;
+use std::collections::HashSet;
+use std::path::PathBuf;
 
 use crate::assets::icon_cache::IconCache;
 use crate::ui_components::loader::ShapeShifterLoader;
@@ -17,6 +19,7 @@ pub struct FileList {
     focus_handle: FocusHandle,
     _subscription: Subscription,
     collapsed_categories: std::collections::HashSet<String>,
+    pending_thumbnails: HashSet<PathBuf>,
     loader: Entity<ShapeShifterLoader>,
 }
 
@@ -34,6 +37,7 @@ impl FileList {
             focus_handle: cx.focus_handle(),
             _subscription: subscription,
             collapsed_categories: std::collections::HashSet::new(),
+            pending_thumbnails: HashSet::new(),
             loader,
         }
     }
@@ -75,26 +79,7 @@ impl Render for FileList {
         let icon_size_px = px(config.ui.icon_size as f32);
 
         // Filter items
-        let matcher = SkimMatcherV2::default();
-        let filter_query = ws.filter_query.clone();
-
-        let filtered_items: Vec<_> = if let Some(global_results) = &ws.search_results {
-            global_results.clone()
-        } else {
-            items
-                .into_iter()
-                .filter(|item| {
-                    let is_hidden = item.name.starts_with('.');
-                    if is_hidden && !show_hidden {
-                        return false;
-                    }
-                    if !filter_query.is_empty() {
-                        return matcher.fuzzy_match(&item.name, &filter_query).is_some();
-                    }
-                    true
-                })
-                .collect()
-        };
+        let filtered_items = ws.filtered_items.clone();
 
         let item_count = filtered_items.len();
         let workspace_handle = self.workspace.clone();
@@ -102,6 +87,7 @@ impl Render for FileList {
         let ws_handle_key = workspace_handle.clone();
         let ws_handle_list = workspace_handle.clone();
 
+        let file_list_entity = cx.entity().clone();
         let list_id = ElementId::Name("file_list_virtual".into());
 
         let list_view = div()
@@ -199,12 +185,16 @@ impl Render for FileList {
                                             };
 
                                             if is_image && thumbnail_path.is_none() {
-                                                let path_for_task = item_path.clone();
-                                                cx.background_executor().spawn(async move {
-                                                    crate::assets::thumbnail_worker::ThumbnailWorker::generate_thumbnail(path_for_task);
-                                                }).detach();
-                                            }
+                                                let is_pending = file_list_entity.read(cx).pending_thumbnails.contains(&item_path);
+                                                if !is_pending {
 
+                                                    let path_for_task = item_path.clone();
+                                                    let entity_for_task = file_list_entity.clone();
+                                                    cx.background_executor().spawn(async move {
+                                                        crate::assets::thumbnail_worker::ThumbnailWorker::generate_thumbnail(path_for_task.clone());
+                                                    }).detach();
+                                                }
+                                            }
                                             let icon_name = if is_dir {
                                                 "folder"
                                             } else {
@@ -360,7 +350,31 @@ impl Render for FileList {
                                 } else {
                                     palette.on_surface_variant
                                 };
+                                let ext = item_path
+                                    .extension()
+                                    .and_then(|e| e.to_str())
+                                    .unwrap_or("")
+                                    .to_lowercase();
 
+                                let is_image = !is_dir && matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "webp");
+
+                                let thumbnail_path = if is_image {
+                                    crate::assets::thumbnail_worker::ThumbnailWorker::get_cached_path(&item_path)
+                                } else {
+                                    None
+                                };
+
+                                            if is_image && thumbnail_path.is_none() {
+                                                let is_pending = file_list_entity.read(cx).pending_thumbnails.contains(&item_path);
+                                                if !is_pending {
+
+                                                    let path_for_task = item_path.clone();
+                                                    let entity_for_task = file_list_entity.clone();
+                                                    cx.background_executor().spawn(async move {
+                                                        crate::assets::thumbnail_worker::ThumbnailWorker::generate_thumbnail(path_for_task.clone());
+                                                    }).detach();
+                                                }
+                                            }
                                 let icon_name = if is_dir {
                                     "folder"
                                 } else {
