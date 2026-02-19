@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::fs_ops::scanner;
 use async_trait::async_trait;
 use gpui::Result;

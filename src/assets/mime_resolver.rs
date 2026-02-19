@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use mime_guess::Mime;
 use std::path::Path;
 

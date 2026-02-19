@@ -1,6 +1,5 @@
 use crate::app_state::config::ConfigManager;
 use crate::app_state::workspace::Workspace;
-use crate::assets::icons::icon;
 use crate::theme_engine::theme::ThemeContext;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
@@ -16,7 +15,6 @@ pub struct FileList {
     icon_cache: Entity<IconCache>,
     focus_handle: FocusHandle,
     _subscription: Subscription,
-    collapsed_categories: std::collections::HashSet<String>,
     loader: Entity<ShapeShifterLoader>,
 }
 
@@ -33,22 +31,10 @@ impl FileList {
             icon_cache,
             focus_handle: cx.focus_handle(),
             _subscription: subscription,
-            collapsed_categories: std::collections::HashSet::new(),
             loader,
         }
     }
-
-    fn toggle_category(&mut self, category: String, cx: &mut Context<Self>) {
-        if self.collapsed_categories.contains(&category) {
-            self.collapsed_categories.remove(&category);
-        } else {
-            self.collapsed_categories.insert(category);
-        }
-        cx.notify();
-    }
 }
-
-// Removed impl_actions macro call
 
 impl Render for FileList {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -58,21 +44,13 @@ impl Render for FileList {
         let items = ws.items.clone();
         let selection = ws.selection.clone();
         let is_loading = ws.is_loading;
-        let icon_cache = self.icon_cache.clone();
-
-        // Prepare data for the list
-        // Note: For now, we are skipping the "grouped" view support in virtualization to ensure stability first,
-        // or we need to flatten the grouped list.
-        // Given the prompt "Replace the standard div().children() loop with UniformList",
-        // and the "Constraint: Fixed Height", a flat list is best.
-        // If "group_by_type" is enabled, we should probably flatten it or fallback?
-        // Let's implement the standard view first as primarily requested for performance.
+        let _icon_cache = self.icon_cache.clone();
 
         let config = cx.global::<ConfigManager>().config.clone();
         let show_hidden = config.ui.show_hidden;
         let view_mode = config.ui.view_mode.clone();
         let is_grid = view_mode == "grid";
-        let icon_size_px = px(config.ui.icon_size as f32);
+        let _icon_size_px = px(config.ui.icon_size as f32);
 
         // Filter items
         let matcher = SkimMatcherV2::default();
@@ -109,8 +87,6 @@ impl Render for FileList {
             .bg(palette.surface_container_low)
             .track_focus(&self.focus_handle)
             .on_key_down(move |event: &KeyDownEvent, _phase, cx| {
-                // Key handling logic...
-                // (Preserving existing key handling)
                 if event.keystroke.modifiers.control {
                     ws_handle_key.update(cx, |ws, cx| match event.keystroke.key.as_str() {
                         "c" => ws.copy_selection(cx),
@@ -120,8 +96,6 @@ impl Render for FileList {
                     });
                 }
             })
-            // Mouse listener for context menu on empty space?
-            // The list covers full size, so we add it to the container.
             .on_mouse_down(MouseButton::Right, move |event, _phase, cx| {
                 ws_handle_click.update(cx, |ws, cx| {
                     ws.open_context_menu(event.position, None, cx);
@@ -289,14 +263,7 @@ impl Render for FileList {
                                                 .child(
                                                     if let Some(thumb) = thumbnail_path {
                                                         let path_str = format!("file://{}", thumb.to_string_lossy());
-                                                        
-                                                        // Debug thumbnail file
-                                                        if let Ok(metadata) = std::fs::metadata(thumb) {
-                                                            println!("Thumb size: {} bytes, Path: {}", metadata.len(), path_str);
-                                                        }
-
                                                         div().flex().children(vec![
-                                                            // Keep blue dot for now
                                                             div().w(px(4.0)).h(px(4.0)).bg(gpui::blue()).rounded_full().into_any_element(),
                                                             img(path_str)
                                                                 .w(px(64.0))
@@ -307,7 +274,6 @@ impl Render for FileList {
                                                         ]).into_any_element()
                                                     } else {
                                                         div().flex().items_center().justify_center().children(vec![
-                                                            // Revert to svg(), explicit size
                                                             crate::assets::icons::icon(icon_name).size_12().into_any_element()
                                                         ]).into_any_element()
                                                     }
@@ -334,17 +300,10 @@ impl Render for FileList {
                             .iter()
                             .enumerate()
                             .map(|(i, item)| {
-                                // Original Render Logic (re-implementing here to map to AnyElement because modification replaced it)
-                                // Actually, I'll copy the logic from previous state or just assume it was there.
-                                // Wait, `replace_file_content` replaces everything between StartLine and EndLine.
-                                // I must include the List View logic again.
-                                // I will perform a minimal replacement of the existing block to save tokens if possible, but I need to wrap it.
-
                                 let is_selected = selection.contains(&item.path);
                                 let item_path = item.path.clone();
                                 let is_dir = item.is_dir;
 
-                                // Colors
                                 let bg_color = if is_selected {
                                     Hsla::from(palette.secondary_container)
                                 } else {
@@ -385,18 +344,17 @@ impl Render for FileList {
 
                                 div()
                                     .id(i)
-                                    .h_10() // FIXED HEIGHT REQUIREMENT
+                                    .h_10()
                                     .flex()
                                     .items_center()
                                     .w_full()
                                     .px_3()
-                                    .border_b_1() // Optional separation
+                                    .border_b_1()
                                     .border_color(Hsla::from(palette.outline_variant).opacity(0.1))
                                     .bg(bg_color)
                                     .text_color(text_color)
                                     .hover(|s| s.bg(palette.surface_container_highest))
                                     .on_click(move |event, _, cx| {
-                                        // Double click handling
                                         if event.click_count() >= 2 {
                                             ws_dbl.update(cx, |ws, cx| {
                                                 ws.open(path_dbl.clone(), cx);
@@ -436,7 +394,7 @@ impl Render for FileList {
                                             .child(crate::assets::icons::icon(icon_name).size_5()),
                                     )
                                     .child(div().ml_3().flex_grow().min_w_0().child(
-                                        div().text_ellipsis().child(item.name.clone()), // TRUNCATION REQUIREMENT
+                                        div().text_ellipsis().child(item.name.clone()),
                                     ))
                                     .child(
                                         div()

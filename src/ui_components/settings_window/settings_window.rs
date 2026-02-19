@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use super::events::SettingsEvent;
 use crate::app_state::config::ConfigManager;
 use crate::theme_engine::theme::ThemeContext;

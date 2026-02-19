@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use super::config::ThemeConfig;
 use gpui::Rgba;
 
