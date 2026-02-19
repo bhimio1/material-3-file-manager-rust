@@ -15,6 +15,7 @@ pub struct OpenWithDialog {
     selected_index: Option<usize>,
     focus_handle: FocusHandle,
     search_query: String,
+    should_focus: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -40,6 +41,7 @@ impl OpenWithDialog {
             selected_index: None,
             focus_handle: cx.focus_handle(),
             search_query: String::new(),
+            should_focus: true,
         }
     }
 
@@ -87,6 +89,11 @@ impl OpenWithDialog {
 
 impl Render for OpenWithDialog {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if self.should_focus {
+            self.should_focus = false;
+            _window.focus(&self.focus_handle, cx);
+        }
+
         let theme = cx.theme();
         let palette = theme.palette.clone();
 
@@ -155,6 +162,26 @@ impl Render for OpenWithDialog {
                         } else if key == "enter" {
                             this.confirm(cx);
                             handled = true;
+                        } else if key == "up" {
+                            if let Some(idx) = this.selected_index {
+                                if idx > 0 {
+                                    this.selected_index = Some(idx - 1);
+                                }
+                            } else if !this.filtered_apps.is_empty() {
+                                this.selected_index = Some(this.filtered_apps.len() - 1);
+                            }
+                            cx.notify();
+                            handled = true;
+                        } else if key == "down" {
+                            if let Some(idx) = this.selected_index {
+                                if idx < this.filtered_apps.len() - 1 {
+                                    this.selected_index = Some(idx + 1);
+                                }
+                            } else if !this.filtered_apps.is_empty() {
+                                this.selected_index = Some(0);
+                            }
+                            cx.notify();
+                            handled = true;
                         }
 
                         if handled {
@@ -187,6 +214,9 @@ impl Render for OpenWithDialog {
                                     .rounded_md()
                                     .border_1()
                                     .border_color(palette.outline)
+                                    .on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| {
+                                        window.focus(&this.focus_handle, cx);
+                                    }))
                                     .child(
                                         if self.search_query.is_empty() {
                                             div().text_color(palette.on_surface_variant).child("Type to search...")
@@ -274,6 +304,7 @@ impl Render for OpenWithDialog {
                     )
                     .child(
                         div()
+                            .flex_grow()
                             .flex()
                             .justify_end()
                             .gap_2()
