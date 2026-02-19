@@ -239,15 +239,7 @@ impl Render for FileList {
                                                 .on_click(move |event, _, cx| {
                                                     if event.click_count() >= 2 {
                                                         ws_dbl.update(cx, |ws, cx| {
-                                                            if is_dir {
-                                                                ws.open(path_dbl.clone(), cx);
-                                                            } else {
-                                                                let _ = std::process::Command::new(
-                                                                    "xdg-open",
-                                                                )
-                                                                .arg(&path_dbl)
-                                                                .spawn();
-                                                            }
+                                                            ws.open(path_dbl.clone(), cx);
                                                         });
                                                     }
                                                 })
@@ -407,13 +399,7 @@ impl Render for FileList {
                                         // Double click handling
                                         if event.click_count() >= 2 {
                                             ws_dbl.update(cx, |ws, cx| {
-                                                if is_dir {
-                                                    ws.open(path_dbl.clone(), cx);
-                                                } else {
-                                                    let _ = std::process::Command::new("xdg-open")
-                                                        .arg(&path_dbl)
-                                                        .spawn();
-                                                }
+                                                ws.open(path_dbl.clone(), cx);
                                             });
                                         }
                                     })
