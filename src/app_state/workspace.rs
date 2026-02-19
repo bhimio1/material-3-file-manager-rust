@@ -882,6 +882,16 @@ impl Workspace {
     }
 
     pub fn paste_clipboard(&mut self, cx: &mut Context<Self>) {
+        let Some((op, sources)) = self.clipboard_state.clone() else {
+            return;
+        };
+
+        if sources.is_empty() {
+            return;
+        }
+
+        let target_dir = self.current_path.clone();
+        let fs = LocalFs;
         let executor = cx.background_executor().clone();
 
         self.is_loading = true;
@@ -890,12 +900,71 @@ impl Workspace {
         cx.spawn(move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
             let cx = cx.clone();
             async move {
-                executor.timer(Duration::from_millis(100)).await;
+                let mut success_count = 0;
+                let mut error_count = 0;
+
+                for source in sources {
+                    if let Some(file_name) = source.file_name() {
+                        let dest = target_dir.join(file_name);
+
+                        // Simple conflict resolution: append " copy" if exists
+                        // Note: This is a basic implementation. Ideally, we\"d check existence and generate a unique name.
+                        let dest = if dest.exists() {
+                            let mut new_name = file_name.to_string_lossy().to_string();
+                            new_name.push_str(" copy");
+                            target_dir.join(new_name)
+                        } else {
+                            dest
+                        };
+
+                        let result = match op {
+                            ClipboardOp::Copy => fs.copy(executor.clone(), source.clone(), dest).await,
+                            ClipboardOp::Cut => {
+                                // Try rename first
+                                if let Ok(_) = std::fs::rename(&source, &dest) {
+                                    Ok(())
+                                } else {
+                                    // Fallback to copy then delete
+                                    match fs.copy(executor.clone(), source.clone(), dest.clone()).await {
+                                        Ok(_) => fs.delete(executor.clone(), source.clone()).await,
+                                        Err(e) => Err(e),
+                                    }
+                                }
+                            }
+                        };
+
+                        match result {
+                            Ok(_) => success_count += 1,
+                            Err(_) => error_count += 1,
+                        }
+                    }
+                }
 
                 let _ = cx.update(|cx| {
                     let _ = this.update(cx, |ws, cx| {
                         ws.is_loading = false;
-                        ws.show_toast("Paste completed".to_string(), ToastKind::Info, cx);
+                        let action = match op {
+                            ClipboardOp::Copy => "Copied",
+                            ClipboardOp::Cut => "Moved",
+                        };
+                        if error_count > 0 {
+                            ws.show_toast(
+                                format!("{} {} items. {} failed.", action, success_count, error_count),
+                                ToastKind::Error,
+                                cx,
+                            );
+                        } else {
+                            ws.show_toast(
+                                format!("{} {} items.", action, success_count),
+                                ToastKind::Success,
+                                cx,
+                            );
+                        }
+
+                        if op == ClipboardOp::Cut && error_count == 0 {
+                             ws.clipboard_state = None;
+                        }
+
                         ws.reload(cx);
                     });
                 });
@@ -966,15 +1035,27 @@ impl Workspace {
                                 Err(_e) => {
                                     // Check for cross-device link error (EXDEV / OS error 18)
                                     // or any error
-                                    // Fallback to Copy + Delete
-                                    let copy_res = std::fs::copy(&source, &dest);
-                                    match copy_res {
-                                        Ok(_) => {
-                                            if let Err(_) = std::fs::remove_file(&source) {
-                                                // Warning: failed to delete source after copy
-                                            }
-                                            success_count += 1;
+                                    // Fallback using fs_extra for directories or copy+delete
+                                    let move_result = if source.is_dir() {
+                                        let mut options = fs_extra::dir::CopyOptions::new();
+                                        options.copy_inside = true;
+                                        match fs_extra::dir::move_dir(&source, &dest, &options) {
+                                            Ok(_) => Ok(()),
+                                            Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())),
                                         }
+                                    } else {
+                                        // File fallback
+                                        match std::fs::copy(&source, &dest) {
+                                            Ok(_) => {
+                                                let _ = std::fs::remove_file(&source);
+                                                Ok(())
+                                            }
+                                            Err(e) => Err(e),
+                                        }
+                                    };
+
+                                    match move_result {
+                                        Ok(_) => success_count += 1,
                                         Err(_) => error_count += 1,
                                     }
                                 }
