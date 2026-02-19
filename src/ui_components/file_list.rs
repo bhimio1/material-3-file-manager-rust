@@ -17,6 +17,7 @@ pub struct FileList {
     icon_cache: Entity<IconCache>,
     focus_handle: FocusHandle,
     _subscription: Subscription,
+    collapsed_categories: std::collections::HashSet<String>,
     pending_thumbnails: HashSet<PathBuf>,
     loader: Entity<ShapeShifterLoader>,
 }
@@ -34,6 +35,7 @@ impl FileList {
             icon_cache,
             focus_handle: cx.focus_handle(),
             _subscription: subscription,
+            collapsed_categories: std::collections::HashSet::new(),
             pending_thumbnails: HashSet::new(),
             loader,
         }
