@@ -7,28 +7,38 @@ use std::path::PathBuf;
 
 /// Get the path to an icon file - returns absolute path
 fn get_icon_path(filename: &str) -> String {
-    // Try to find the assets directory
-    let candidates = [
-        // Development: relative to current working directory
-        std::env::current_dir()
-            .ok()
-            .map(|p| p.join("assets/icons").join(filename))
-            .unwrap_or_default(),
-        // Relative path (may work if CWD is project root)
-        PathBuf::from("assets/icons").join(filename),
-        // Installed: relative to executable
-        std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|p| p.join("assets/icons").join(filename)))
-            .unwrap_or_default(),
-        // Fallback: absolute path for development
-        PathBuf::from("/home/bhimio/Dev/material 3 file manager -rust/assets/icons").join(filename),
-    ];
+    let mut candidates = Vec::new();
 
-    for candidate in candidates.iter() {
+    // 1. Current working directory (good for "cargo run")
+    if let Ok(cwd) = std::env::current_dir() {
+        candidates.push(cwd.join("assets/icons").join(filename));
+    }
+
+    // 2. Executable directory and parents (good for "target/debug" or installed)
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            candidates.push(exe_dir.join("assets/icons").join(filename));
+            candidates.push(exe_dir.join("../assets/icons").join(filename));
+            candidates.push(exe_dir.join("../../assets/icons").join(filename));
+            candidates.push(exe_dir.join("../../../assets/icons").join(filename));
+        }
+    }
+
+    // 3. Compile-time manifest dir (best for dev)
+    if let Some(manifest_dir) = option_env!("CARGO_MANIFEST_DIR") {
+        candidates.push(PathBuf::from(manifest_dir).join("assets/icons").join(filename));
+    }
+
+    // 4. System paths (Linux)
+    candidates.push(PathBuf::from("/usr/share/material_3_file_manager/assets/icons").join(filename));
+    candidates.push(PathBuf::from("/usr/local/share/material_3_file_manager/assets/icons").join(filename));
+    // Hardcoded fallback relative to home (for original author specific setup if needed, but relative is better)
+    if let Ok(home) = std::env::var("HOME") {
+        candidates.push(PathBuf::from(home).join("Dev/material 3 file manager -rust/assets/icons").join(filename));
+    }
+
+    for candidate in candidates {
         if candidate.exists() {
-            // println!("Icon found: {:?}", candidate);
-            // Return canonicalized absolute path
             if let Ok(abs_path) = candidate.canonicalize() {
                 return abs_path.to_string_lossy().to_string();
             }
@@ -36,11 +46,8 @@ fn get_icon_path(filename: &str) -> String {
         }
     }
 
-    // Default fallback - use absolute path
-    format!(
-        "/home/bhimio/Dev/material 3 file manager -rust/assets/icons/{}",
-        filename
-    )
+    // Default fallback - try relative path
+    format!("assets/icons/{}", filename)
 }
 
 /// Returns an SVG icon element using Material Symbols
