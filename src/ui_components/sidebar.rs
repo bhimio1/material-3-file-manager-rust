@@ -78,20 +78,19 @@ impl Render for Sidebar {
             .flex()
             .flex_col()
             .flex_shrink_0()
-            .w_64() // Increased width slightly
+            .w_64()
             .h_full()
             .bg(theme.palette.surface)
             .text_color(theme.palette.on_surface)
             .border_r_1()
             .border_color(theme.palette.outline_variant)
             .p_2()
-            // Places header
             .child(
                 div()
                     .text_xs()
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(theme.palette.on_surface_variant)
-                    .px_3()
+                    .px_4() // Updated for alignment
                     .py_2()
                     .child("Places"),
             )
@@ -188,7 +187,7 @@ impl Render for Sidebar {
                                 .text_xs()
                                 .font_weight(FontWeight::SEMIBOLD)
                                 .text_color(theme.palette.on_surface_variant)
-                                .px_3()
+                                .px_4() // Updated for alignment
                                 .py_2()
                                 .mt_2()
                                 .child("Drives"),
@@ -214,12 +213,12 @@ impl Render for Sidebar {
                         .flex()
                         .items_center()
                         .gap_3()
-                        .px_3()
-                        .py_2()
-                        .rounded_lg()
+                        .px_4() // Updated for consistency
+                        .py_3() // Updated for consistency
+                        .rounded_full() // Updated for consistency
                         .text_color(theme.palette.on_surface_variant)
                         .cursor_pointer()
-                        .hover(|s| s.bg(theme.palette.surface_variant))
+                        .hover(|s| s.bg(theme.palette.surface_container_highest))
                         .on_click(cx.listener(|_, _, _, cx| {
                             cx.emit(SidebarEvent::OpenSettings);
                         }))
@@ -239,7 +238,6 @@ fn sidebar_item(
 ) -> impl IntoElement {
     let theme = cx.theme();
     let path_buf = PathBuf::from(path);
-    // Exact match for now
     let active = !is_dashboard && active_path == &path_buf;
 
     let bg = if active {
@@ -259,16 +257,16 @@ fn sidebar_item(
         .flex()
         .items_center()
         .gap_3()
-        .px_4() // Increased horizontal padding
-        .py_3() // Increased vertical padding for better touch target
-        .rounded_full() // M3 Stadium shape
+        .px_4()
+        .py_3()
+        .rounded_full()
         .bg(bg)
         .text_color(color)
         .font_weight(if active {
             FontWeight::BOLD
         } else {
             FontWeight::MEDIUM
-        }) // Emphasize active
+        })
         .cursor_pointer()
         .hover(|s| {
             if !active {
