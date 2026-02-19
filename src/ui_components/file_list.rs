@@ -266,7 +266,8 @@ impl Render for FileList {
                                                         ]).into_any_element()
                                                     } else {
                                                         div().flex().items_center().justify_center().children(vec![
-                                                            crate::assets::icons::icon(icon_name).size_12().into_any_element()
+                                                            // Revert to svg(), explicit size
+                                                            icon(icon_name).size_12().into_any_element()
                                                         ]).into_any_element()
                                                     }
                                                 )
@@ -407,7 +408,7 @@ impl Render for FileList {
                                             .w(px(24.0))
                                             .flex()
                                             .justify_center()
-                                            .child(crate::assets::icons::icon(icon_name).size_5()),
+                                            .child(icon(icon_name).size_5()),
                                     )
                                     .child(div().ml_3().flex_grow().min_w_0().child(
                                         div().text_ellipsis().child(item.name.clone()),
