@@ -388,11 +388,19 @@ impl Workspace {
 
     pub fn toggle_search_recursive(&mut self, cx: &mut Context<Self>) {
         self.search_options.recursive = !self.search_options.recursive;
+        if !self.filter_query.is_empty() {
+            let query = self.filter_query.clone();
+            self.perform_search(query, cx);
+        }
         cx.notify();
     }
 
     pub fn toggle_search_content(&mut self, cx: &mut Context<Self>) {
         self.search_options.content_search = !self.search_options.content_search;
+        if !self.filter_query.is_empty() {
+            let query = self.filter_query.clone();
+            self.perform_search(query, cx);
+        }
         cx.notify();
     }
 
