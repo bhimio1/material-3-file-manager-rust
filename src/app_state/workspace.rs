@@ -5,10 +5,13 @@ use crate::fs_ops::scanner::SearchOptions;
 use crate::ui_components::open_with_dialog::{OpenWithDialog, OpenWithEvent};
 use crate::ui_components::toast::{Toast, ToastKind};
 use crate::ui_components::universal_picker_modal::{FilePickerEvent, UniversalPickerModal};
+use fuzzy_matcher::skim::SkimMatcherV2;
+use fuzzy_matcher::FuzzyMatcher;
 use gpui::prelude::*;
 use gpui::*;
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 #[derive(Clone, Debug)]
@@ -62,6 +65,7 @@ pub enum PickerAction {
 pub struct Workspace {
     pub current_path: PathBuf,
     pub items: Vec<FileEntry>,
+    pub filtered_items: Arc<Vec<FileEntry>>,
     pub is_loading: bool,
     pub selection: HashSet<PathBuf>,
     pub last_selected: Option<PathBuf>,
@@ -98,6 +102,7 @@ impl Workspace {
             app_cache,
             current_path: initial_path.clone(),
             items: Vec::new(),
+            filtered_items: Arc::new(Vec::new()),
             is_loading: false,
             selection: HashSet::new(),
             last_selected: None,
@@ -265,6 +270,7 @@ impl Workspace {
                         let _ = cx.update(|cx| {
                             let _ = this.update(cx, |ws, cx| {
                                 ws.items = entries;
+                                ws.filter_items(cx);
                                 ws.is_loading = false;
                                 ws.compute_grouped_files(cx);
                                 cx.notify();
@@ -414,6 +420,7 @@ impl Workspace {
 
     pub fn set_filter_query(&mut self, query: String, cx: &mut Context<Self>) {
         self.filter_query = query;
+        self.filter_items(cx);
         cx.notify();
     }
 
@@ -728,6 +735,37 @@ impl Workspace {
         }
     }
 
+    pub fn filter_items(&mut self, cx: &mut Context<Self>) {
+        let config = cx
+            .global::<crate::app_state::config::ConfigManager>()
+            .config
+            .clone();
+        let show_hidden = config.ui.show_hidden;
+        let matcher = SkimMatcherV2::default();
+
+        if let Some(global_results) = &self.search_results {
+            self.filtered_items = std::sync::Arc::new(global_results.clone());
+        } else {
+            let query = self.filter_query.clone();
+            self.filtered_items = std::sync::Arc::new(
+                self.items
+                    .iter()
+                    .filter(|item| {
+                        let is_hidden = item.name.starts_with(".");
+                        if is_hidden && !show_hidden {
+                            return false;
+                        }
+                        if !query.is_empty() {
+                            return matcher.fuzzy_match(&item.name, &query).is_some();
+                        }
+                        true
+                    })
+                    .cloned()
+                    .collect(),
+            );
+        }
+    }
+
     pub fn reload(&mut self, cx: &mut Context<Self>) {
         let path = self.current_path.clone();
         self.navigate(path, cx);
@@ -834,6 +872,7 @@ impl Workspace {
                         let _ = this.update(cx, |ws, cx| {
                             ws.is_loading = false;
                             ws.search_results = Some(entries);
+                            ws.filter_items(cx);
                             cx.notify();
                         });
                     }
@@ -854,6 +893,7 @@ impl Workspace {
         self.filter_query.clear();
         self.search_results = None;
         self.is_searching = false;
+        self.filter_items(cx);
         cx.notify();
     }
 
@@ -918,14 +958,19 @@ impl Workspace {
                         };
 
                         let result = match op {
-                            ClipboardOp::Copy => fs.copy(executor.clone(), source.clone(), dest).await,
+                            ClipboardOp::Copy => {
+                                fs.copy(executor.clone(), source.clone(), dest).await
+                            }
                             ClipboardOp::Cut => {
                                 // Try rename first
                                 if let Ok(_) = std::fs::rename(&source, &dest) {
                                     Ok(())
                                 } else {
                                     // Fallback to copy then delete
-                                    match fs.copy(executor.clone(), source.clone(), dest.clone()).await {
+                                    match fs
+                                        .copy(executor.clone(), source.clone(), dest.clone())
+                                        .await
+                                    {
                                         Ok(_) => fs.delete(executor.clone(), source.clone()).await,
                                         Err(e) => Err(e),
                                     }
@@ -949,7 +994,10 @@ impl Workspace {
                         };
                         if error_count > 0 {
                             ws.show_toast(
-                                format!("{} {} items. {} failed.", action, success_count, error_count),
+                                format!(
+                                    "{} {} items. {} failed.",
+                                    action, success_count, error_count
+                                ),
                                 ToastKind::Error,
                                 cx,
                             );
@@ -962,7 +1010,7 @@ impl Workspace {
                         }
 
                         if op == ClipboardOp::Cut && error_count == 0 {
-                             ws.clipboard_state = None;
+                            ws.clipboard_state = None;
                         }
 
                         ws.reload(cx);
@@ -1041,7 +1089,10 @@ impl Workspace {
                                         options.copy_inside = true;
                                         match fs_extra::dir::move_dir(&source, &dest, &options) {
                                             Ok(_) => Ok(()),
-                                            Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e.to_string())),
+                                            Err(e) => Err(std::io::Error::new(
+                                                std::io::ErrorKind::Other,
+                                                e.to_string(),
+                                            )),
                                         }
                                     } else {
                                         // File fallback

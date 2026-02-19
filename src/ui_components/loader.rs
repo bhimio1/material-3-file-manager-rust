@@ -77,21 +77,19 @@ impl Render for ShapeShifterLoader {
                         let corner_radius = min_dim * (0.1 + 0.4 * morph);
 
                         // Draw Main Shape (Primary Color)
-                        window.paint_quad(
-                            fill(b, theme.palette.primary)
-                                .corner_radii(corner_radius),
-                        );
+                        window
+                            .paint_quad(fill(b, theme.palette.primary).corner_radii(corner_radius));
 
                         // Draw Inner Shape (Secondary Color, Offset Phase)
                         // This adds complexity and the "Material" layering look
                         let inner_scale = 0.6;
                         let inner_width = width * inner_scale;
                         let inner_height = height * inner_scale;
-                         let inner_origin = Point {
+                        let inner_origin = Point {
                             x: center.x - inner_width / 2.0,
                             y: center.y - inner_height / 2.0,
                         };
-                         let inner_b = Bounds {
+                        let inner_b = Bounds {
                             origin: inner_origin,
                             size: gpui::size(inner_width, inner_height).into(),
                         };
@@ -100,7 +98,7 @@ impl Render for ShapeShifterLoader {
                         // Also pulse opacity or color if desired, but surface_container_highest provides good contrast
                         let inner_radius = inner_width.min(inner_height) * (0.5 - 0.4 * morph);
 
-                         window.paint_quad(
+                        window.paint_quad(
                             fill(inner_b, theme.palette.surface_container_highest)
                                 .corner_radii(inner_radius),
                         );
