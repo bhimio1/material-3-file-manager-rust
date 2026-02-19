@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 use super::events::SettingsEvent;
 use crate::app_state::config::ConfigManager;
-use crate::theme_engine::theme::ThemeContext;
 use crate::theme_engine::palette::M3Palette;
+use crate::theme_engine::theme::ThemeContext;
 use gpui::prelude::*;
 use gpui::*;
 
@@ -142,15 +142,15 @@ impl SettingsWindow {
                         window.focus(&focus_handle_clone, cx);
                     })
                     .on_key_down(move |event: &KeyDownEvent, _window, cx| {
-                         let key = &event.keystroke.key;
-                         let char_str = &event.keystroke.key_char;
-                         let modifiers = &event.keystroke.modifiers;
+                        let key = &event.keystroke.key;
+                        let char_str = &event.keystroke.key_char;
+                        let modifiers = &event.keystroke.modifiers;
 
-                         let key = key.clone();
-                         let char_str = char_str.clone();
-                         let modifiers = modifiers.clone();
+                        let key = key.clone();
+                        let char_str = char_str.clone();
+                        let modifiers = modifiers.clone();
 
-                         view.update(cx, |this, cx| {
+                        view.update(cx, |this, cx| {
                             let mut handled = false;
 
                             if key_name == "terminal" {
@@ -168,7 +168,10 @@ impl SettingsWindow {
                                     }
                                 } else if key == "enter" {
                                     this.update_command(key_name, this.terminal_input.clone(), cx);
-                                    cx.emit(SettingsEvent::ShowToast(format!("{} command saved", key_name)));
+                                    cx.emit(SettingsEvent::ShowToast(format!(
+                                        "{} command saved",
+                                        key_name
+                                    )));
                                     handled = true;
                                 }
                             } else {
@@ -186,7 +189,10 @@ impl SettingsWindow {
                                     }
                                 } else if key == "enter" {
                                     this.update_command(key_name, this.editor_input.clone(), cx);
-                                    cx.emit(SettingsEvent::ShowToast(format!("{} command saved", key_name)));
+                                    cx.emit(SettingsEvent::ShowToast(format!(
+                                        "{} command saved",
+                                        key_name
+                                    )));
                                     handled = true;
                                 }
                             }
@@ -194,16 +200,23 @@ impl SettingsWindow {
                             if handled {
                                 cx.notify();
                             }
-                         });
+                        });
                     })
                     .child(if value.is_empty() {
-                         div().text_color(palette.on_surface_variant).child("Type command...")
+                        div()
+                            .text_color(palette.on_surface_variant)
+                            .child("Type command...")
                     } else {
-                         div().text_color(palette.on_surface).child(value.to_string())
-                    })
+                        div()
+                            .text_color(palette.on_surface)
+                            .child(value.to_string())
+                    }),
             )
             .child(
-                div().text_xs().text_color(palette.on_surface_variant).child("Press Enter to save")
+                div()
+                    .text_xs()
+                    .text_color(palette.on_surface_variant)
+                    .child("Press Enter to save"),
             )
     }
 
@@ -232,40 +245,29 @@ impl SettingsWindow {
                             .child("Show Hidden Files"),
                     )
                     .child(
-                        crate::ui_components::chips::Chip::new(
-                            "toggle_hidden_chip",
-                            "Hidden",
-                        )
-                        .filter()
-                        .icon("check")
-                        .selected(ui_config.show_hidden)
-                        .on_click(cx.listener(move |_this, _, _, cx| {
-                            cx.update_global::<ConfigManager, _>(|manager, cx| {
-                                manager.config.ui.show_hidden = !manager.config.ui.show_hidden;
-                                manager.save_config();
-                                cx.refresh_windows();
-                            });
-                            cx.emit(SettingsEvent::ConfigChanged);
-                        })),
+                        crate::ui_components::chips::Chip::new("toggle_hidden_chip", "Hidden")
+                            .filter()
+                            .icon("check")
+                            .selected(ui_config.show_hidden)
+                            .on_click(cx.listener(move |_this, _, _, cx| {
+                                cx.update_global::<ConfigManager, _>(|manager, cx| {
+                                    manager.config.ui.show_hidden = !manager.config.ui.show_hidden;
+                                    manager.save_config();
+                                    cx.refresh_windows();
+                                });
+                                cx.emit(SettingsEvent::ConfigChanged);
+                            })),
                     ),
             )
             // View Mode
             .child(div().h_px().bg(palette.outline_variant))
             .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap_2()
-                    .child("View Mode")
-                    .child(
-                        div()
-                            .flex()
-                            .gap_2()
-                            .child(
-                                crate::ui_components::chips::Chip::new(
-                                    "view_grid_chip",
-                                    "Grid",
-                                )
+                div().flex().flex_col().gap_2().child("View Mode").child(
+                    div()
+                        .flex()
+                        .gap_2()
+                        .child(
+                            crate::ui_components::chips::Chip::new("view_grid_chip", "Grid")
                                 .filter()
                                 .icon("grid")
                                 .selected(ui_config.view_mode == "grid")
@@ -276,12 +278,9 @@ impl SettingsWindow {
                                         cx.refresh_windows();
                                     });
                                 })),
-                            )
-                            .child(
-                                crate::ui_components::chips::Chip::new(
-                                    "view_list_chip",
-                                    "List",
-                                )
+                        )
+                        .child(
+                            crate::ui_components::chips::Chip::new("view_list_chip", "List")
                                 .filter()
                                 .icon("list")
                                 .selected(ui_config.view_mode == "list")
@@ -292,8 +291,8 @@ impl SettingsWindow {
                                         cx.refresh_windows();
                                     });
                                 })),
-                            ),
-                    ),
+                        ),
+                ),
             )
     }
 
@@ -336,13 +335,15 @@ impl SettingsWindow {
                                 )
                                 .filter()
                                 .selected(is_selected)
-                                .on_click(cx.listener(move |_this, _, _, cx| {
-                                    cx.update_global::<ConfigManager, _>(move |manager, cx| {
-                                        manager.config.ui.icon_size = size;
-                                        manager.save_config();
-                                        cx.refresh_windows();
-                                    });
-                                }))
+                                .on_click(cx.listener(
+                                    move |_this, _, _, cx| {
+                                        cx.update_global::<ConfigManager, _>(move |manager, cx| {
+                                            manager.config.ui.icon_size = size;
+                                            manager.save_config();
+                                            cx.refresh_windows();
+                                        });
+                                    },
+                                ))
                             })),
                     ),
             )
@@ -365,23 +366,25 @@ impl SettingsWindow {
                                     "Template exported to {:?}",
                                     path
                                 ))),
-                                Err(e) => cx.emit(SettingsEvent::ShowToast(format!("Error: {}", e))),
+                                Err(e) => {
+                                    cx.emit(SettingsEvent::ShowToast(format!("Error: {}", e)))
+                                }
                             }
                         })),
                     )
                     .child(
-                        crate::ui_components::chips::Chip::new(
-                            "reload_theme_chip",
-                            "Reload Theme",
-                        )
-                        .icon("refresh")
-                        .on_click(cx.listener(move |_this, _, _, cx| {
-                            cx.update_global::<crate::theme_engine::theme::Theme, _>(|theme, _| {
-                                theme.palette = crate::theme_engine::theme::Theme::load_palette();
-                            });
-                            cx.refresh_windows();
-                            cx.emit(SettingsEvent::ShowToast("Theme reloaded".to_string()));
-                        })),
+                        crate::ui_components::chips::Chip::new("reload_theme_chip", "Reload Theme")
+                            .icon("refresh")
+                            .on_click(cx.listener(move |_this, _, _, cx| {
+                                cx.update_global::<crate::theme_engine::theme::Theme, _>(
+                                    |theme, _| {
+                                        theme.palette =
+                                            crate::theme_engine::theme::Theme::load_palette();
+                                    },
+                                );
+                                cx.refresh_windows();
+                                cx.emit(SettingsEvent::ShowToast("Theme reloaded".to_string()));
+                            })),
                     ),
             )
             .child(
@@ -391,16 +394,20 @@ impl SettingsWindow {
                     .justify_between()
                     .child(div().text_xs().child("Matugen config example"))
                     .child(
-                         crate::ui_components::chips::Chip::new("copy_matugen_chip", "Copy")
+                        crate::ui_components::chips::Chip::new("copy_matugen_chip", "Copy")
                             .icon("copy")
                             .on_click(cx.listener(move |_this, _, _, cx| {
                                 let example = r#"[templates.material_3_file_manager]
 input_path = "~/.config/material_3_file_manager/matugen_template.json"
 output_path = "~/.config/material_3_file_manager/theme.json""#;
-                                cx.write_to_clipboard(ClipboardItem::new_string(example.to_string()));
-                                cx.emit(SettingsEvent::ShowToast("Copied to clipboard".to_string()));
-                            }))
-                    )
+                                cx.write_to_clipboard(ClipboardItem::new_string(
+                                    example.to_string(),
+                                ));
+                                cx.emit(SettingsEvent::ShowToast(
+                                    "Copied to clipboard".to_string(),
+                                ));
+                            })),
+                    ),
             )
     }
 
@@ -429,20 +436,17 @@ output_path = "~/.config/material_3_file_manager/theme.json""#;
                             .child("Use DMS Open"),
                     )
                     .child(
-                        crate::ui_components::chips::Chip::new(
-                            "toggle_dms_chip",
-                            "Enabled",
-                        )
-                        .filter()
-                        .icon("check")
-                        .selected(config.use_dms)
-                        .on_click(cx.listener(move |_this, _, _, cx| {
-                            cx.update_global::<ConfigManager, _>(|manager, cx| {
-                                manager.config.use_dms = !manager.config.use_dms;
-                                manager.save_config();
-                                cx.refresh_windows();
-                            });
-                        })),
+                        crate::ui_components::chips::Chip::new("toggle_dms_chip", "Enabled")
+                            .filter()
+                            .icon("check")
+                            .selected(config.use_dms)
+                            .on_click(cx.listener(move |_this, _, _, cx| {
+                                cx.update_global::<ConfigManager, _>(|manager, cx| {
+                                    manager.config.use_dms = !manager.config.use_dms;
+                                    manager.save_config();
+                                    cx.refresh_windows();
+                                });
+                            })),
                     ),
             )
             .child(div().h_px().bg(palette.outline_variant))
@@ -472,20 +476,20 @@ output_path = "~/.config/material_3_file_manager/theme.json""#;
                     .items_center()
                     .child("Reset Pinned Folders")
                     .child(
-                        crate::ui_components::chips::Chip::new(
-                            "reset_pinned_chip",
-                            "Reset",
-                        )
-                        .icon("remove")
-                        .on_click(cx.listener(move |_this, _, _, cx| {
-                            cx.update_global::<ConfigManager, _>(|manager, cx| {
-                                manager.config.pinned_folders = crate::app_state::config::default_pinned_folders();
-                                manager.save_config();
-                                cx.refresh_windows();
-                            });
-                             cx.emit(SettingsEvent::ShowToast("Pinned folders reset".to_string()));
-                        })),
-                    )
+                        crate::ui_components::chips::Chip::new("reset_pinned_chip", "Reset")
+                            .icon("remove")
+                            .on_click(cx.listener(move |_this, _, _, cx| {
+                                cx.update_global::<ConfigManager, _>(|manager, cx| {
+                                    manager.config.pinned_folders =
+                                        crate::app_state::config::default_pinned_folders();
+                                    manager.save_config();
+                                    cx.refresh_windows();
+                                });
+                                cx.emit(SettingsEvent::ShowToast(
+                                    "Pinned folders reset".to_string(),
+                                ));
+                            })),
+                    ),
             )
     }
 }
@@ -530,31 +534,27 @@ impl Render for SettingsWindow {
                             .flex_col()
                             .flex_grow()
                             .child(match self.active_tab {
-                                SettingsTab::General => {
-                                    self.render_general_settings(&ui_config, &palette, cx).into_any_element()
-                                }
-                                SettingsTab::Appearance => {
-                                    self.render_appearance_settings(&ui_config, &palette, cx).into_any_element()
-                                }
-                                SettingsTab::Advanced => {
-                                    self.render_advanced_settings(&config, &palette, cx).into_any_element()
-                                }
+                                SettingsTab::General => self
+                                    .render_general_settings(&ui_config, &palette, cx)
+                                    .into_any_element(),
+                                SettingsTab::Appearance => self
+                                    .render_appearance_settings(&ui_config, &palette, cx)
+                                    .into_any_element(),
+                                SettingsTab::Advanced => self
+                                    .render_advanced_settings(&config, &palette, cx)
+                                    .into_any_element(),
                             }),
                     ),
             )
             // Footer (Done button)
             .child(
-                div()
-                    .mt_4()
-                    .flex()
-                    .justify_end()
-                    .child(
-                        crate::ui_components::chips::Chip::new("settings_done_chip", "Done")
-                            .selected(true)
-                            .on_click(cx.listener(move |_this, _, _, cx| {
-                                cx.emit(SettingsEvent::Close);
-                            })),
-                    ),
+                div().mt_4().flex().justify_end().child(
+                    crate::ui_components::chips::Chip::new("settings_done_chip", "Done")
+                        .selected(true)
+                        .on_click(cx.listener(move |_this, _, _, cx| {
+                            cx.emit(SettingsEvent::Close);
+                        })),
+                ),
             )
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation()) // Prevent closing if click inside
     }
