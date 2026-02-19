@@ -45,7 +45,7 @@ fn default_icon_size() -> u32 {
     64
 }
 
-fn default_pinned_folders() -> Vec<PathBuf> {
+pub fn default_pinned_folders() -> Vec<PathBuf> {
     let mut folders = Vec::new();
     if let Some(home) = dirs::home_dir() {
         folders.push(home.clone());
