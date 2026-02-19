@@ -2,6 +2,7 @@ use crate::app_state::config::ConfigContext;
 use crate::assets::app_cache::AppCache;
 use crate::fs_ops::provider::{FileEntry, FileSystemProvider, LocalFs};
 use crate::fs_ops::scanner::SearchOptions;
+use crate::fs_ops::watcher::FsWatcher;
 use crate::ui_components::open_with_dialog::{OpenWithDialog, OpenWithEvent};
 use crate::ui_components::toast::{Toast, ToastKind};
 use crate::ui_components::universal_picker_modal::{FilePickerEvent, UniversalPickerModal};
@@ -90,6 +91,7 @@ pub struct Workspace {
     pub app_cache: Entity<AppCache>,
     pub pending_portal_response:
         Option<tokio::sync::oneshot::Sender<crate::fs_ops::portal::PortalResponse>>,
+    pub watcher: Option<FsWatcher>,
 }
 
 impl Workspace {
@@ -98,6 +100,13 @@ impl Workspace {
         initial_path: PathBuf,
         app_cache: Entity<AppCache>,
     ) -> Entity<Self> {
+        let (tx, rx) = flume::unbounded();
+        let mut watcher = FsWatcher::new(tx).ok();
+
+        if let Some(w) = &mut watcher {
+            w.watch(&initial_path);
+        }
+
         let ws_entity = cx.new(|_cx| Self {
             app_cache,
             current_path: initial_path.clone(),
@@ -125,7 +134,37 @@ impl Workspace {
             folder_picker: None,
             open_with_dialog: None,
             pending_portal_response: None,
+            watcher,
         });
+
+        let weak_ws_watcher = ws_entity.downgrade();
+        cx.spawn(move |_, cx: &mut AsyncApp| {
+            let cx = cx.clone();
+            async move {
+                let mut needs_reload = false;
+                loop {
+                    tokio::select! {
+                        res = rx.recv_async() => {
+                            match res {
+                                Ok(_) => { needs_reload = true; }
+                                Err(_) => break,
+                            }
+                        }
+                        _ = tokio::time::sleep(Duration::from_millis(200)), if needs_reload => {
+                            needs_reload = false;
+                            let _ = cx.update(|cx| {
+                                if let Some(handle) = weak_ws_watcher.upgrade() {
+                                    let _ = handle.update(cx, |ws, cx| {
+                                        ws.reload(cx);
+                                    });
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+        })
+        .detach();
 
         // Start Portal Request Listener
         let rx = crate::fs_ops::portal::get_receiver();
@@ -248,6 +287,10 @@ impl Workspace {
             self.history.push(self.current_path.clone());
             self.history_index = self.history.len() - 1;
             self.current_path = path.clone();
+
+            if let Some(w) = &mut self.watcher {
+                w.watch(&path);
+            }
         }
 
         self.is_loading = true;
@@ -635,7 +678,7 @@ impl Workspace {
         let mode = crate::ui_components::universal_picker_modal::PickerMode::OpenFolder;
 
         // Dispose existing if any?
-        if let Some(picker) = self.folder_picker.take() {
+        if let Some(_picker) = self.folder_picker.take() {
             // picker.update(cx, |p, cx| p.cancel(cx)); // Optional cleanup
         }
 

@@ -189,6 +189,7 @@ impl Config {
     }
 
     /// Add a pinned folder (max 10 folders)
+#[allow(dead_code)]
     pub fn add_pinned_folder(&mut self, path: PathBuf) -> bool {
         // Don't add duplicates
         if self.pinned_folders.contains(&path) {
@@ -204,6 +205,7 @@ impl Config {
     }
 
     /// Remove a pinned folder
+#[allow(dead_code)]
     pub fn remove_pinned_folder(&mut self, path: &std::path::Path) -> bool {
         if let Some(pos) = self.pinned_folders.iter().position(|p| p == path) {
             self.pinned_folders.remove(pos);
