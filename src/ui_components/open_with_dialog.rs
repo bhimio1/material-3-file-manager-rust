@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use gpui::prelude::*;
 use gpui::*;
 use std::path::PathBuf;
@@ -59,6 +60,30 @@ impl OpenWithDialog {
     fn cancel(&mut self, cx: &mut Context<Self>) {
         cx.emit(OpenWithEvent::Close);
     }
+
+    fn update_search(&mut self, query: String, cx: &mut Context<Self>) {
+        self.search_query = query;
+        self.filter_apps(cx);
+    }
+
+    fn filter_apps(&mut self, cx: &mut Context<Self>) {
+        let query = self.search_query.to_lowercase();
+        if query.is_empty() {
+            self.filtered_apps = self.apps.clone();
+        } else {
+            self.filtered_apps = self
+                .apps
+                .iter()
+                .filter(|app| {
+                    app.name.to_lowercase().contains(&query)
+                        || app.exec.to_lowercase().contains(&query)
+                })
+                .cloned()
+                .collect();
+        }
+        self.selected_index = None;
+        cx.notify();
+    }
 }
 
 impl Render for OpenWithDialog {
@@ -72,6 +97,13 @@ impl Render for OpenWithDialog {
             .unwrap_or_default()
             .to_string_lossy()
             .to_string();
+
+        let filtered_apps = self.filtered_apps.clone();
+        let selected_index = self.selected_index;
+        let item_count = filtered_apps.len();
+        let list_id = ElementId::Name("app_list".into());
+        let this_handle = cx.entity().clone();
+        let palette_clone = palette.clone();
 
         div()
             .id("open_with_overlay")
@@ -98,75 +130,143 @@ impl Render for OpenWithDialog {
                     .flex()
                     .flex_col()
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .track_focus(&self.focus_handle)
+                    .on_key_down(cx.listener(|this, event: &KeyDownEvent, _, cx| {
+                        let key = &event.keystroke.key;
+                        let mut handled = false;
+                        if key == "backspace" {
+                            let mut query = this.search_query.clone();
+                            query.pop();
+                            this.update_search(query, cx);
+                            handled = true;
+                        } else if let Some(char_str) = &event.keystroke.key_char {
+                            // Simple text input logic
+                            if !event.keystroke.modifiers.control
+                                && !event.keystroke.modifiers.alt
+                                && !event.keystroke.modifiers.platform
+                                && char_str.len() == 1
+                            {
+                                let mut query = this.search_query.clone();
+                                query.push_str(char_str);
+                                this.update_search(query, cx);
+                                handled = true;
+                            }
+                        } else if key == "escape" {
+                            this.cancel(cx);
+                            handled = true;
+                        } else if key == "enter" {
+                            this.confirm(cx);
+                            handled = true;
+                        }
+
+                        if handled {
+                            cx.stop_propagation();
+                        }
+                    }))
                     .child(
                         div()
                             .p_4()
                             .border_b_1()
                             .border_color(palette.outline_variant)
+                            .flex()
+                            .flex_col()
+                            .gap_3()
                             .child(
                                 div()
                                     .text_xl()
                                     .font_weight(FontWeight::SEMIBOLD)
                                     .text_color(palette.on_surface)
                                     .child(format!("Open \"{}\" with...", file_name)),
+                            )
+                            .child(
+                                div()
+                                    .w_full()
+                                    .h_10()
+                                    .px_3()
+                                    .flex()
+                                    .items_center()
+                                    .bg(palette.surface_container_high)
+                                    .rounded_md()
+                                    .border_1()
+                                    .border_color(palette.outline)
+                                    .child(if self.search_query.is_empty() {
+                                        div()
+                                            .text_color(palette.on_surface_variant)
+                                            .child("Type to search...")
+                                    } else {
+                                        div()
+                                            .text_color(palette.on_surface)
+                                            .child(self.search_query.clone())
+                                    }),
                             ),
                     )
                     .child(
-                        div()
-                            .flex_grow()
-                            // .overflow_y_scroll() // Temporarily commented out
-                            .child(div().flex().flex_col().children(
-                                self.filtered_apps.iter().enumerate().map(|(ix, app)| {
-                                    let is_selected = Some(ix) == self.selected_index;
-                                    let bg = if is_selected {
-                                        palette.secondary_container
-                                    } else {
-                                        palette.surface
-                                    };
-                                    let text = if is_selected {
-                                        palette.on_secondary_container
-                                    } else {
-                                        palette.on_surface
-                                    };
-                                    let app_name = app.name.clone();
-                                    let app_exec = app.exec.clone();
+                        div().flex_grow().size_full().child(
+                            uniform_list(list_id, item_count, move |range, _window, _cx| {
+                                let palette = palette_clone.clone();
+                                let this_handle = this_handle.clone();
+                                let filtered_apps = filtered_apps.clone();
 
-                                    div()
-                                        .id(SharedString::from(format!("app_{}", ix)))
-                                        .flex()
-                                        .items_center()
-                                        .gap_3()
-                                        .px_4()
-                                        .py_3()
-                                        .bg(bg)
-                                        .hover(|s| s.bg(palette.surface_container_high))
-                                        .cursor_pointer()
-                                        .on_mouse_down(
-                                            MouseButton::Left,
-                                            cx.listener(move |this, _, _, cx| {
-                                                this.select_app(ix, cx);
-                                            }),
-                                        )
-                                        .child(icon("folder").size_6().text_color(text))
-                                        .child(
-                                            div()
-                                                .flex()
-                                                .flex_col()
-                                                .child(
-                                                    div()
-                                                        .font_weight(FontWeight::BOLD)
-                                                        .text_color(text)
-                                                        .child(app_name),
-                                                )
-                                                .child(
-                                                    div()
-                                                        .text_xs()
-                                                        .text_color(palette.on_surface_variant)
-                                                        .child(app_exec),
-                                                ),
-                                        )
-                                }),
-                            )),
+                                range
+                                    .map(|ix| {
+                                        let app = &filtered_apps[ix];
+                                        let is_selected = Some(ix) == selected_index;
+
+                                        let bg = if is_selected {
+                                            palette.secondary_container
+                                        } else {
+                                            palette.surface
+                                        };
+                                        let text = if is_selected {
+                                            palette.on_secondary_container
+                                        } else {
+                                            palette.on_surface
+                                        };
+                                        let app_name = app.name.clone();
+                                        let app_exec = app.exec.clone();
+
+                                        let handle_click = this_handle.clone();
+
+                                        div()
+                                            .id(ix)
+                                            .h(px(72.0))
+                                            .flex()
+                                            .items_center()
+                                            .gap_3()
+                                            .px_4()
+                                            .py_3()
+                                            .bg(bg)
+                                            .hover(|s| s.bg(palette.surface_container_high))
+                                            .cursor_pointer()
+                                            .on_mouse_down(MouseButton::Left, move |_, _, cx| {
+                                                handle_click.update(cx, |this, cx| {
+                                                    this.select_app(ix, cx);
+                                                });
+                                            })
+                                            .child(icon("folder").size_8().text_color(text))
+                                            .child(
+                                                div()
+                                                    .flex()
+                                                    .flex_col()
+                                                    .child(
+                                                        div()
+                                                            .font_weight(FontWeight::BOLD)
+                                                            .text_color(text)
+                                                            .child(app_name),
+                                                    )
+                                                    .child(
+                                                        div()
+                                                            .text_xs()
+                                                            .text_color(palette.on_surface_variant)
+                                                            .child(app_exec),
+                                                    ),
+                                            )
+                                            .into_any_element()
+                                    })
+                                    .collect::<Vec<_>>()
+                            })
+                            .size_full(),
+                        ),
                     )
                     .child(
                         div()

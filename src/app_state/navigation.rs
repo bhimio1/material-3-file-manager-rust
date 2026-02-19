@@ -54,7 +54,7 @@ impl NavigationStack {
             None
         }
     }
-    
+
     pub fn current(&self) -> &Path {
         &self.current
     }
