@@ -2,13 +2,17 @@ use crate::app_state::config::ConfigContext;
 use crate::assets::app_cache::AppCache;
 use crate::fs_ops::provider::{FileEntry, FileSystemProvider, LocalFs};
 use crate::fs_ops::scanner::SearchOptions;
+use crate::fs_ops::watcher::FsWatcher;
 use crate::ui_components::open_with_dialog::{OpenWithDialog, OpenWithEvent};
 use crate::ui_components::toast::{Toast, ToastKind};
 use crate::ui_components::universal_picker_modal::{FilePickerEvent, UniversalPickerModal};
+use fuzzy_matcher::skim::SkimMatcherV2;
+use fuzzy_matcher::FuzzyMatcher;
 use gpui::prelude::*;
 use gpui::*;
 use std::collections::HashSet;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 #[derive(Clone, Debug)]
@@ -62,6 +66,7 @@ pub enum PickerAction {
 pub struct Workspace {
     pub current_path: PathBuf,
     pub items: Vec<FileEntry>,
+    pub filtered_items: Arc<Vec<FileEntry>>,
     pub is_loading: bool,
     pub selection: HashSet<PathBuf>,
     pub last_selected: Option<PathBuf>,
@@ -86,6 +91,7 @@ pub struct Workspace {
     pub app_cache: Entity<AppCache>,
     pub pending_portal_response:
         Option<tokio::sync::oneshot::Sender<crate::fs_ops::portal::PortalResponse>>,
+    pub watcher: Option<FsWatcher>,
 }
 
 impl Workspace {
@@ -94,10 +100,18 @@ impl Workspace {
         initial_path: PathBuf,
         app_cache: Entity<AppCache>,
     ) -> Entity<Self> {
+        let (tx, rx) = flume::unbounded();
+        let mut watcher = FsWatcher::new(tx).ok();
+
+        if let Some(w) = &mut watcher {
+            w.watch(&initial_path);
+        }
+
         let ws_entity = cx.new(|_cx| Self {
             app_cache,
             current_path: initial_path.clone(),
             items: Vec::new(),
+            filtered_items: Arc::new(Vec::new()),
             is_loading: false,
             selection: HashSet::new(),
             last_selected: None,
@@ -120,7 +134,37 @@ impl Workspace {
             folder_picker: None,
             open_with_dialog: None,
             pending_portal_response: None,
+            watcher,
         });
+
+        let weak_ws_watcher = ws_entity.downgrade();
+        cx.spawn(move |_, cx: &mut AsyncApp| {
+            let cx = cx.clone();
+            async move {
+                let mut needs_reload = false;
+                loop {
+                    tokio::select! {
+                        res = rx.recv_async() => {
+                            match res {
+                                Ok(_) => { needs_reload = true; }
+                                Err(_) => break,
+                            }
+                        }
+                        _ = tokio::time::sleep(Duration::from_millis(200)), if needs_reload => {
+                            needs_reload = false;
+                            let _ = cx.update(|cx| {
+                                if let Some(handle) = weak_ws_watcher.upgrade() {
+                                    let _ = handle.update(cx, |ws, cx| {
+                                        ws.reload(cx);
+                                    });
+                                }
+                            });
+                        }
+                    }
+                }
+            }
+        })
+        .detach();
 
         // Start Portal Request Listener
         let rx = crate::fs_ops::portal::get_receiver();
@@ -243,6 +287,10 @@ impl Workspace {
             self.history.push(self.current_path.clone());
             self.history_index = self.history.len() - 1;
             self.current_path = path.clone();
+
+            if let Some(w) = &mut self.watcher {
+                w.watch(&path);
+            }
         }
 
         self.is_loading = true;
@@ -265,6 +313,7 @@ impl Workspace {
                         let _ = cx.update(|cx| {
                             let _ = this.update(cx, |ws, cx| {
                                 ws.items = entries;
+                                ws.filter_items(cx);
                                 ws.is_loading = false;
                                 ws.compute_grouped_files(cx);
                                 cx.notify();
@@ -339,11 +388,19 @@ impl Workspace {
 
     pub fn toggle_search_recursive(&mut self, cx: &mut Context<Self>) {
         self.search_options.recursive = !self.search_options.recursive;
+        if !self.filter_query.is_empty() {
+            let query = self.filter_query.clone();
+            self.perform_search(query, cx);
+        }
         cx.notify();
     }
 
     pub fn toggle_search_content(&mut self, cx: &mut Context<Self>) {
         self.search_options.content_search = !self.search_options.content_search;
+        if !self.filter_query.is_empty() {
+            let query = self.filter_query.clone();
+            self.perform_search(query, cx);
+        }
         cx.notify();
     }
 
@@ -414,6 +471,7 @@ impl Workspace {
 
     pub fn set_filter_query(&mut self, query: String, cx: &mut Context<Self>) {
         self.filter_query = query;
+        self.filter_items(cx);
         cx.notify();
     }
 
@@ -628,7 +686,7 @@ impl Workspace {
         let mode = crate::ui_components::universal_picker_modal::PickerMode::OpenFolder;
 
         // Dispose existing if any?
-        if let Some(picker) = self.folder_picker.take() {
+        if let Some(_picker) = self.folder_picker.take() {
             // picker.update(cx, |p, cx| p.cancel(cx)); // Optional cleanup
         }
 
@@ -725,6 +783,37 @@ impl Workspace {
             OpenWithEvent::Close => {
                 self.dismiss_overlay(cx);
             }
+        }
+    }
+
+    pub fn filter_items(&mut self, cx: &mut Context<Self>) {
+        let config = cx
+            .global::<crate::app_state::config::ConfigManager>()
+            .config
+            .clone();
+        let show_hidden = config.ui.show_hidden;
+        let matcher = SkimMatcherV2::default();
+
+        if let Some(global_results) = &self.search_results {
+            self.filtered_items = std::sync::Arc::new(global_results.clone());
+        } else {
+            let query = self.filter_query.clone();
+            self.filtered_items = std::sync::Arc::new(
+                self.items
+                    .iter()
+                    .filter(|item| {
+                        let is_hidden = item.name.starts_with(".");
+                        if is_hidden && !show_hidden {
+                            return false;
+                        }
+                        if !query.is_empty() {
+                            return matcher.fuzzy_match(&item.name, &query).is_some();
+                        }
+                        true
+                    })
+                    .cloned()
+                    .collect(),
+            );
         }
     }
 
@@ -834,6 +923,7 @@ impl Workspace {
                         let _ = this.update(cx, |ws, cx| {
                             ws.is_loading = false;
                             ws.search_results = Some(entries);
+                            ws.filter_items(cx);
                             cx.notify();
                         });
                     }
@@ -854,6 +944,7 @@ impl Workspace {
         self.filter_query.clear();
         self.search_results = None;
         self.is_searching = false;
+        self.filter_items(cx);
         cx.notify();
     }
 
@@ -882,6 +973,16 @@ impl Workspace {
     }
 
     pub fn paste_clipboard(&mut self, cx: &mut Context<Self>) {
+        let Some((op, sources)) = self.clipboard_state.clone() else {
+            return;
+        };
+
+        if sources.is_empty() {
+            return;
+        }
+
+        let target_dir = self.current_path.clone();
+        let fs = LocalFs;
         let executor = cx.background_executor().clone();
 
         self.is_loading = true;
@@ -890,12 +991,79 @@ impl Workspace {
         cx.spawn(move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
             let cx = cx.clone();
             async move {
-                executor.timer(Duration::from_millis(100)).await;
+                let mut success_count = 0;
+                let mut error_count = 0;
+
+                for source in sources {
+                    if let Some(file_name) = source.file_name() {
+                        let dest = target_dir.join(file_name);
+
+                        // Simple conflict resolution: append " copy" if exists
+                        // Note: This is a basic implementation. Ideally, we\"d check existence and generate a unique name.
+                        let dest = if dest.exists() {
+                            let mut new_name = file_name.to_string_lossy().to_string();
+                            new_name.push_str(" copy");
+                            target_dir.join(new_name)
+                        } else {
+                            dest
+                        };
+
+                        let result = match op {
+                            ClipboardOp::Copy => {
+                                fs.copy(executor.clone(), source.clone(), dest).await
+                            }
+                            ClipboardOp::Cut => {
+                                // Try rename first
+                                if let Ok(_) = std::fs::rename(&source, &dest) {
+                                    Ok(())
+                                } else {
+                                    // Fallback to copy then delete
+                                    match fs
+                                        .copy(executor.clone(), source.clone(), dest.clone())
+                                        .await
+                                    {
+                                        Ok(_) => fs.delete(executor.clone(), source.clone()).await,
+                                        Err(e) => Err(e),
+                                    }
+                                }
+                            }
+                        };
+
+                        match result {
+                            Ok(_) => success_count += 1,
+                            Err(_) => error_count += 1,
+                        }
+                    }
+                }
 
                 let _ = cx.update(|cx| {
                     let _ = this.update(cx, |ws, cx| {
                         ws.is_loading = false;
-                        ws.show_toast("Paste completed".to_string(), ToastKind::Info, cx);
+                        let action = match op {
+                            ClipboardOp::Copy => "Copied",
+                            ClipboardOp::Cut => "Moved",
+                        };
+                        if error_count > 0 {
+                            ws.show_toast(
+                                format!(
+                                    "{} {} items. {} failed.",
+                                    action, success_count, error_count
+                                ),
+                                ToastKind::Error,
+                                cx,
+                            );
+                        } else {
+                            ws.show_toast(
+                                format!("{} {} items.", action, success_count),
+                                ToastKind::Success,
+                                cx,
+                            );
+                        }
+
+                        if op == ClipboardOp::Cut && error_count == 0 {
+                            ws.clipboard_state = None;
+                        }
+
                         ws.reload(cx);
                     });
                 });
@@ -966,15 +1134,30 @@ impl Workspace {
                                 Err(_e) => {
                                     // Check for cross-device link error (EXDEV / OS error 18)
                                     // or any error
-                                    // Fallback to Copy + Delete
-                                    let copy_res = std::fs::copy(&source, &dest);
-                                    match copy_res {
-                                        Ok(_) => {
-                                            if let Err(_) = std::fs::remove_file(&source) {
-                                                // Warning: failed to delete source after copy
-                                            }
-                                            success_count += 1;
+                                    // Fallback using fs_extra for directories or copy+delete
+                                    let move_result = if source.is_dir() {
+                                        let mut options = fs_extra::dir::CopyOptions::new();
+                                        options.copy_inside = true;
+                                        match fs_extra::dir::move_dir(&source, &dest, &options) {
+                                            Ok(_) => Ok(()),
+                                            Err(e) => Err(std::io::Error::new(
+                                                std::io::ErrorKind::Other,
+                                                e.to_string(),
+                                            )),
                                         }
+                                    } else {
+                                        // File fallback
+                                        match std::fs::copy(&source, &dest) {
+                                            Ok(_) => {
+                                                let _ = std::fs::remove_file(&source);
+                                                Ok(())
+                                            }
+                                            Err(e) => Err(e),
+                                        }
+                                    };
+
+                                    match move_result {
+                                        Ok(_) => success_count += 1,
                                         Err(_) => error_count += 1,
                                     }
                                 }

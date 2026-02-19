@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use crate::theme_engine::theme::Theme;
 use gpui::prelude::*;
 use gpui::*;
