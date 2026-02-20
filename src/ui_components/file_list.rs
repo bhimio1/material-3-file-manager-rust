@@ -8,6 +8,8 @@ use gpui::*;
 use std::collections::HashSet;
 use std::path::PathBuf;
 
+use crate::assets::icons::icon;
+
 use crate::assets::icon_cache::IconCache;
 use crate::ui_components::loader::ShapeShifterLoader;
 
