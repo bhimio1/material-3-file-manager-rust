@@ -7,28 +7,32 @@ use std::path::PathBuf;
 
 /// Get the path to an icon file - returns absolute path
 fn get_icon_path(filename: &str) -> String {
-    // Try to find the assets directory
-    let candidates = [
-        // Development: relative to current working directory
-        std::env::current_dir()
-            .ok()
-            .map(|p| p.join("assets/icons").join(filename))
-            .unwrap_or_default(),
-        // Relative path (may work if CWD is project root)
-        PathBuf::from("assets/icons").join(filename),
-        // Installed: relative to executable
-        std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|p| p.join("assets/icons").join(filename)))
-            .unwrap_or_default(),
-        // Fallback: absolute path for development
-        PathBuf::from("/home/bhimio/Dev/material 3 file manager -rust/assets/icons").join(filename),
-    ];
+    let mut candidates = Vec::new();
+
+    // 1. Check CARGO_MANIFEST_DIR (Development)
+    if let Some(manifest_dir) = option_env!("CARGO_MANIFEST_DIR") {
+        candidates.push(PathBuf::from(manifest_dir).join("assets/icons").join(filename));
+    }
+
+    // 2. Check current working directory
+    if let Ok(cwd) = std::env::current_dir() {
+        candidates.push(cwd.join("assets/icons").join(filename));
+    }
+
+    // 3. Check relative to executable (Distribution/Release)
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(parent) = exe_path.parent() {
+            candidates.push(parent.join("assets/icons").join(filename));
+            // Also check ../share/m3fm/assets/icons if installed in standard linux path
+            candidates.push(parent.join("../share/m3fm/assets/icons").join(filename));
+        }
+    }
+
+    // 4. Fallback relative path
+    candidates.push(PathBuf::from("assets/icons").join(filename));
 
     for candidate in candidates.iter() {
         if candidate.exists() {
-            // println!("Icon found: {:?}", candidate);
-            // Return canonicalized absolute path
             if let Ok(abs_path) = candidate.canonicalize() {
                 return abs_path.to_string_lossy().to_string();
             }
@@ -36,11 +40,8 @@ fn get_icon_path(filename: &str) -> String {
         }
     }
 
-    // Default fallback - use absolute path
-    format!(
-        "/home/bhimio/Dev/material 3 file manager -rust/assets/icons/{}",
-        filename
-    )
+    // Last resort fallback
+    filename.to_string()
 }
 
 /// Returns an SVG icon element using Material Symbols
