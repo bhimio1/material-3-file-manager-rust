@@ -1,4 +1,6 @@
-use crate::app_state::config::ConfigManager;
+import os
+
+content = r"""use crate::app_state::config::ConfigManager;
 use crate::app_state::workspace::Workspace;
 use crate::theme_engine::theme::ThemeContext;
 use fuzzy_matcher::skim::SkimMatcherV2;
@@ -70,7 +72,7 @@ impl FileList {
             .flex()
             .flex_col()
             .size_full()
-            // .overflow_y_scroll() // Removed due to compilation error
+            .overflow_y_scroll()
             .children(groups.into_iter().map(|group_name| {
                 let items = &grouped_files[&group_name];
                 let item_count = items.len();
@@ -566,81 +568,9 @@ impl Render for FileList {
                                             div()
                                                 .flex()
                                                 .items_center()
-                                                .p_2()
-                                                .m_1()
-                                                .rounded_md()
-                                                .bg(bg_color)
-                                                .text_color(text_color)
-                                                .hover(|s| s.bg(palette.surface_container_highest))
-                                                .on_click(move |event, _, cx| {
-                                                    if event.click_count() >= 2 {
-                                                        ws_dbl.update(cx, |ws, cx| {
-                                                            ws.open(path_dbl.clone(), cx);
-                                                        });
-                                                    }
-                                                })
-                                                .on_mouse_down(
-                                                    MouseButton::Left,
-                                                    move |event, _, cx| {
-                                                        cx.stop_propagation();
-                                                        ws_click.update(cx, |ws, cx| {
-                                                            if event.modifiers.control {
-                                                                ws.toggle_selection(
-                                                                    path_click.clone(),
-                                                                    cx,
-                                                                );
-                                                            } else if event.modifiers.shift {
-                                                                ws.select_range(
-                                                                    path_click.clone(),
-                                                                    cx,
-                                                                );
-                                                            } else {
-                                                                ws.set_selection(
-                                                                    path_click.clone(),
-                                                                    cx,
-                                                                );
-                                                            }
-                                                        });
-                                                    },
-                                                )
-                                                .on_mouse_down(
-                                                    MouseButton::Right,
-                                                    move |event, _, cx| {
-                                                        cx.stop_propagation();
-                                                        ws_right.update(cx, |ws, cx| {
-                                                            if !ws.selection.contains(&path_right) {
-                                                                ws.set_selection(
-                                                                    path_right.clone(),
-                                                                    cx,
-                                                                );
-                                                            }
-                                                            ws.open_context_menu(
-                                                                event.position,
-                                                                Some(path_right.clone()),
-                                                                cx,
-                                                            );
-                                                        });
-                                                    },
-                                                )
-                                                .child(
-                                                    if let Some(thumb) = thumbnail_path {
-                                                        let path_str = format!("file://{}", thumb.to_string_lossy());
-                                                        div().flex().children(vec![
-                                                            div().w(px(4.0)).h(px(4.0)).bg(gpui::blue()).rounded_full().into_any_element(),
-                                                            img(path_str)
-                                                                .w(px(64.0))
-                                                                .h(px(64.0))
-                                                                .object_fit(ObjectFit::Cover)
-                                                                .rounded_md()
-                                                                .into_any_element()
-                                                        ]).into_any_element()
-                                                    } else {
-                                                        div().flex().items_center().justify_center().children(vec![
-                                                            // Revert to svg(), explicit size
-                                                            icon(icon_name).size_12().into_any_element()
-                                                        ]).into_any_element()
-                                                    }
-                                                )
+                                                .justify_center()
+                                                .w_full()
+                                                .h(px(64.0))
                                                 .child(
                                                     img(path_str)
                                                         .w(px(64.0))
@@ -741,44 +671,6 @@ impl Render for FileList {
                                                     ws.open(path_dbl.clone(), cx);
                                                 });
                                             }
-                                            ws.open_context_menu(
-                                                event.position,
-                                                Some(path_right.clone()),
-                                                cx,
-                                            );
-                                        });
-                                    })
-                                    .child(
-                                        div()
-                                            .w(px(24.0))
-                                            .flex()
-                                            .justify_center()
-                                            .child(icon(icon_name).size_5()),
-                                    )
-                                    .child(div().ml_3().flex_grow().min_w_0().child(
-                                        div().text_ellipsis().child(item.name.clone()),
-                                    ))
-                                    .child(
-                                        div()
-                                            .w_24()
-                                            .text_sm()
-                                            .text_color(sub_text_color)
-                                            .child(item.formatted_date.clone()),
-                                    )
-                                    .child(
-                                        div()
-                                            .w_20()
-                                            .text_sm()
-                                            .text_right()
-                                            .text_color(sub_text_color)
-                                            .child(item.formatted_size.clone()),
-                                    )
-                                    .into_any_element()
-                            })
-                            .collect::<Vec<_>>()
-                    }
-                })
-                .size_full()
                                         })
                                         .on_mouse_down(MouseButton::Left, move |event, _, cx| {
                                             cx.stop_propagation();
@@ -857,3 +749,7 @@ impl Render for FileList {
             .into_any_element()
     }
 }
+"""
+
+with open("src/ui_components/file_list.rs", "w") as f:
+    f.write(content)
