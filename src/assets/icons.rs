@@ -31,7 +31,35 @@ fn get_icon_path(filename: &str) -> String {
     // 4. Fallback relative path
     candidates.push(PathBuf::from("assets/icons").join(filename));
 
-    for candidate in candidates.iter() {
+    // 1. Current working directory (good for "cargo run")
+    if let Ok(cwd) = std::env::current_dir() {
+        candidates.push(cwd.join("assets/icons").join(filename));
+    }
+
+    // 2. Executable directory and parents (good for "target/debug" or installed)
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            candidates.push(exe_dir.join("assets/icons").join(filename));
+            candidates.push(exe_dir.join("../assets/icons").join(filename));
+            candidates.push(exe_dir.join("../../assets/icons").join(filename));
+            candidates.push(exe_dir.join("../../../assets/icons").join(filename));
+        }
+    }
+
+    // 3. Compile-time manifest dir (best for dev)
+    if let Some(manifest_dir) = option_env!("CARGO_MANIFEST_DIR") {
+        candidates.push(PathBuf::from(manifest_dir).join("assets/icons").join(filename));
+    }
+
+    // 4. System paths (Linux)
+    candidates.push(PathBuf::from("/usr/share/material_3_file_manager/assets/icons").join(filename));
+    candidates.push(PathBuf::from("/usr/local/share/material_3_file_manager/assets/icons").join(filename));
+    // Hardcoded fallback relative to home (for original author specific setup if needed, but relative is better)
+    if let Ok(home) = std::env::var("HOME") {
+        candidates.push(PathBuf::from(home).join("Dev/material 3 file manager -rust/assets/icons").join(filename));
+    }
+
+    for candidate in candidates {
         if candidate.exists() {
             if let Ok(abs_path) = candidate.canonicalize() {
                 return abs_path.to_string_lossy().to_string();
