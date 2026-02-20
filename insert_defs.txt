@@ -1,0 +1,13 @@
+                                let ext = item_path
+                                    .extension()
+                                    .and_then(|e| e.to_str())
+                                    .unwrap_or("")
+                                    .to_lowercase();
+
+                                let is_image = !is_dir && matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "webp");
+
+                                let thumbnail_path = if is_image {
+                                    crate::assets::thumbnail_worker::ThumbnailWorker::get_cached_path(&item_path)
+                                } else {
+                                    None
+                                };

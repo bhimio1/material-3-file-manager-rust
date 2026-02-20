@@ -45,7 +45,7 @@ fn default_icon_size() -> u32 {
     64
 }
 
-fn default_pinned_folders() -> Vec<PathBuf> {
+pub fn default_pinned_folders() -> Vec<PathBuf> {
     let mut folders = Vec::new();
     if let Some(home) = dirs::home_dir() {
         folders.push(home.clone());
@@ -189,6 +189,7 @@ impl Config {
     }
 
     /// Add a pinned folder (max 10 folders)
+#[allow(dead_code)]
     pub fn add_pinned_folder(&mut self, path: PathBuf) -> bool {
         // Don't add duplicates
         if self.pinned_folders.contains(&path) {
@@ -204,6 +205,7 @@ impl Config {
     }
 
     /// Remove a pinned folder
+#[allow(dead_code)]
     pub fn remove_pinned_folder(&mut self, path: &std::path::Path) -> bool {
         if let Some(pos) = self.pinned_folders.iter().position(|p| p == path) {
             self.pinned_folders.remove(pos);

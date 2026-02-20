@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use jwalk::WalkDir;
 use std::path::{Path, PathBuf};
 
