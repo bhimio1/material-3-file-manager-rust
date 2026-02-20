@@ -1,4 +1,6 @@
-use crate::app_state::config::ConfigManager;
+import os
+
+content = r"""use crate::app_state::config::ConfigManager;
 use crate::app_state::workspace::Workspace;
 use crate::theme_engine::theme::ThemeContext;
 use fuzzy_matcher::skim::SkimMatcherV2;
@@ -747,3 +749,7 @@ impl Render for FileList {
             .into_any_element()
     }
 }
+"""
+
+with open("src/ui_components/file_list.rs", "w") as f:
+    f.write(content)

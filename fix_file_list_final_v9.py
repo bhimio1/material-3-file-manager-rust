@@ -1,4 +1,6 @@
-use crate::app_state::config::ConfigManager;
+import os
+
+content = r"""use crate::app_state::config::ConfigManager;
 use crate::app_state::workspace::Workspace;
 use crate::theme_engine::theme::ThemeContext;
 use fuzzy_matcher::skim::SkimMatcherV2;
@@ -10,6 +12,7 @@ use std::path::PathBuf;
 
 use crate::assets::icon_cache::IconCache;
 use crate::ui_components::loader::ShapeShifterLoader;
+use crate::fs_ops::provider::FileEntry;
 
 pub struct FileList {
     workspace: Entity<Workspace>,
@@ -42,13 +45,12 @@ impl FileList {
 
     fn render_grouped_view(
         &self,
-        grouped_files: std::collections::HashMap<String, Vec<crate::fs_ops::provider::FileEntry>>,
-        selection: HashSet<PathBuf>,
+        ws: &crate::app_state::workspace::Workspace,
         palette: &crate::theme_engine::palette::M3Palette,
         is_grid: bool,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let mut groups: Vec<_> = grouped_files.keys().cloned().collect();
+        let mut groups: Vec<_> = ws.grouped_files.keys().collect();
         groups.sort_by(|a, b| {
             if *a == "Folders" {
                 std::cmp::Ordering::Less
@@ -63,16 +65,15 @@ impl FileList {
             }
         });
 
+        let selection = ws.selection.clone();
         let file_list_entity = cx.entity().clone();
         let workspace_handle = self.workspace.clone();
 
         div()
-            .flex()
-            .flex_col()
             .size_full()
-            // .overflow_y_scroll() // Removed due to compilation error
+            .overflow_y_scroll()
             .children(groups.into_iter().map(|group_name| {
-                let items = &grouped_files[&group_name];
+                let items = &ws.grouped_files[group_name];
                 let item_count = items.len();
 
                 div()
@@ -158,7 +159,7 @@ impl FileList {
                                     let path_right = item_path.clone();
 
                                     div()
-                                        .id(idx)
+                                        .id(idx) // Ensure this ID is unique within siblings. Siblings are items in this group. Safe.
                                         .w(px(120.0))
                                         .h_full()
                                         .flex()
@@ -363,30 +364,23 @@ impl FileList {
 impl Render for FileList {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let palette = cx.theme().palette.clone();
+        let ws = self.workspace.read(cx);
 
-        // Clone needed data to avoid immutable borrow of cx
-        let (item_count, is_loading, grouped_files, group_by_type, filtered_items, selection) = {
-            let ws = self.workspace.read(cx);
-            (
-                ws.items.len(),
-                ws.is_loading,
-                ws.grouped_files.clone(), // Heavy clone but safe
-                ws.group_by_type,
-                ws.filtered_items.clone(),
-                ws.selection.clone(),
-            )
-        };
+        let item_count = ws.items.len();
+        let is_loading = ws.is_loading;
 
         let config = cx.global::<ConfigManager>().config.clone();
         let view_mode = config.ui.view_mode.clone();
         let is_grid = view_mode == "grid";
 
         // Handle Grouped View
-        if group_by_type && !grouped_files.is_empty() {
-            return self.render_grouped_view(grouped_files, selection, &palette, is_grid, cx).into_any_element();
+        if ws.group_by_type && !ws.grouped_files.is_empty() {
+            return self.render_grouped_view(ws, &palette, is_grid, cx).into_any_element();
         }
 
+        let filtered_items = ws.filtered_items.clone();
         let filtered_count = filtered_items.len();
+        let selection = ws.selection.clone();
 
         let workspace_handle = self.workspace.clone();
         let ws_handle_click = workspace_handle.clone();
@@ -487,6 +481,9 @@ impl Render for FileList {
                                     };
 
                                     if is_image && thumbnail_path.is_none() {
+                                        // cx here is _WindowContext?
+                                        // file_list.read(cx) might fail if cx is not App/WindowContext.
+                                        // But uniform_list cx IS WindowContext.
                                         let is_pending = file_list
                                             .read(cx)
                                             .pending_thumbnails
@@ -747,3 +744,7 @@ impl Render for FileList {
             .into_any_element()
     }
 }
+"""
+
+with open("src/ui_components/file_list.rs", "w") as f:
+    f.write(content)

@@ -391,8 +391,9 @@ impl Workspace {
         if !self.filter_query.is_empty() {
             let query = self.filter_query.clone();
             self.perform_search(query, cx);
+        } else {
+            cx.notify();
         }
-        cx.notify();
     }
 
     pub fn toggle_search_content(&mut self, cx: &mut Context<Self>) {
@@ -400,8 +401,9 @@ impl Workspace {
         if !self.filter_query.is_empty() {
             let query = self.filter_query.clone();
             self.perform_search(query, cx);
+        } else {
+            cx.notify();
         }
-        cx.notify();
     }
 
     pub fn open(&mut self, path: PathBuf, cx: &mut Context<Self>) {

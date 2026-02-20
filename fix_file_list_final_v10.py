@@ -1,4 +1,6 @@
-use crate::app_state::config::ConfigManager;
+import os
+
+content = r"""use crate::app_state::config::ConfigManager;
 use crate::app_state::workspace::Workspace;
 use crate::theme_engine::theme::ThemeContext;
 use fuzzy_matcher::skim::SkimMatcherV2;
@@ -70,7 +72,7 @@ impl FileList {
             .flex()
             .flex_col()
             .size_full()
-            // .overflow_y_scroll() // Removed due to compilation error
+            .overflow_y_scroll()
             .children(groups.into_iter().map(|group_name| {
                 let items = &grouped_files[&group_name];
                 let item_count = items.len();
@@ -747,3 +749,7 @@ impl Render for FileList {
             .into_any_element()
     }
 }
+"""
+
+with open("src/ui_components/file_list.rs", "w") as f:
+    f.write(content)

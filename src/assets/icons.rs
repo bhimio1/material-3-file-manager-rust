@@ -9,6 +9,28 @@ use std::path::PathBuf;
 fn get_icon_path(filename: &str) -> String {
     let mut candidates = Vec::new();
 
+    // 1. Check CARGO_MANIFEST_DIR (Development)
+    if let Some(manifest_dir) = option_env!("CARGO_MANIFEST_DIR") {
+        candidates.push(PathBuf::from(manifest_dir).join("assets/icons").join(filename));
+    }
+
+    // 2. Check current working directory
+    if let Ok(cwd) = std::env::current_dir() {
+        candidates.push(cwd.join("assets/icons").join(filename));
+    }
+
+    // 3. Check relative to executable (Distribution/Release)
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(parent) = exe_path.parent() {
+            candidates.push(parent.join("assets/icons").join(filename));
+            // Also check ../share/m3fm/assets/icons if installed in standard linux path
+            candidates.push(parent.join("../share/m3fm/assets/icons").join(filename));
+        }
+    }
+
+    // 4. Fallback relative path
+    candidates.push(PathBuf::from("assets/icons").join(filename));
+
     // 1. Current working directory (good for "cargo run")
     if let Ok(cwd) = std::env::current_dir() {
         candidates.push(cwd.join("assets/icons").join(filename));
@@ -46,8 +68,8 @@ fn get_icon_path(filename: &str) -> String {
         }
     }
 
-    // Default fallback - try relative path
-    format!("assets/icons/{}", filename)
+    // Last resort fallback
+    filename.to_string()
 }
 
 /// Returns an SVG icon element using Material Symbols
