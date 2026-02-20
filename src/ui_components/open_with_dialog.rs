@@ -216,6 +216,12 @@ impl Render for OpenWithDialog {
                                     .rounded_md()
                                     .border_1()
                                     .border_color(palette.outline)
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(|this, _, window, cx| {
+                                            window.focus(&this.focus_handle, cx);
+                                        }),
+                                    )
                                     .child(if self.search_query.is_empty() {
                                         div()
                                             .text_color(palette.on_surface_variant)
