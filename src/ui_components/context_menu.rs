@@ -9,7 +9,7 @@ pub struct ContextMenuOverlay;
 impl ContextMenuOverlay {
     pub fn render<V: 'static>(
         position: Point<Pixels>,
-        path: PathBuf, // The path the menu was opened on (unused for now but good for context)
+        path: PathBuf,
         workspace: Entity<Workspace>,
         cx: &Context<V>,
     ) -> impl IntoElement {
@@ -24,6 +24,7 @@ impl ContextMenuOverlay {
 
         // Helper to create menu items
         let menu_item = |label: &str,
+                         icon_name: Option<&str>,
                          action: Box<
             dyn Fn(&mut Workspace, &mut Context<Workspace>) + Send + Sync + 'static,
         >,
@@ -31,20 +32,28 @@ impl ContextMenuOverlay {
             let theme = cx.theme();
             let workspace = workspace.clone();
             div()
-                .id(label.to_string()) // Add ID for interaction (owned string)
+                .id(label.to_string())
                 .w_full()
-                .px_4()
+                .flex()
+                .items_center()
+                .gap_3()
+                .px_3()
                 .py_2()
-                .bg(theme.palette.surface_container_high)
-                .hover(|s| s.bg(theme.palette.surface_variant))
+                .rounded_md() // M3 dropdown item rounding
+                .bg(gpui::rgba(0x00000000)) // Transparent default
+                .hover(|s| s.bg(theme.palette.surface_container_highest))
+                .active(|s| s.bg(theme.palette.secondary_container).text_color(theme.palette.on_secondary_container))
                 .cursor_pointer()
-                .child(label.to_string())
+                .child(if let Some(name) = icon_name {
+                    crate::assets::icons::icon(name).size_5().text_color(theme.palette.on_surface_variant).into_any_element()
+                } else {
+                    div().w_5().into_any_element() // Spacer
+                })
+                .child(div().text_sm().child(label.to_string()))
                 .on_click(move |_, _, cx| {
                     cx.stop_propagation();
                     workspace.update(cx, |ws, cx| {
                         action(ws, cx);
-                        // Only dismiss if it's still the context menu
-                        // (Actions like "Properties" might have changed it to a dialog)
                         if let Some(ActiveOverlay::ContextMenu) = ws.active_overlay {
                             ws.dismiss_overlay(cx);
                         }
@@ -53,8 +62,8 @@ impl ContextMenuOverlay {
         };
 
         div()
-            .id("context_menu_container") // Add ID for interaction
-            .on_click(|_, _, cx| cx.stop_propagation()) // Stop propagation to root
+            .id("context_menu_container")
+            .on_click(|_, _, cx| cx.stop_propagation())
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .on_mouse_down(MouseButton::Right, |_, _, cx| cx.stop_propagation())
             .absolute()
@@ -62,15 +71,16 @@ impl ContextMenuOverlay {
             .top(position.y)
             .w_64()
             .bg(theme.palette.surface_container_high)
-            .rounded_lg()
-            .shadow_md()
-            .p_2()
+            .rounded_xl()
+            .shadow_lg()
+            .p_1()
             .flex()
             .flex_col()
-            .gap_1()
+            .gap_0()
             // Open
             .child(menu_item(
                 "Open",
+                Some("folder"),
                 Box::new({
                     let path = path_open.clone();
                     move |ws, cx| {
@@ -81,6 +91,7 @@ impl ContextMenuOverlay {
             ))
             .child(menu_item(
                 "Open in Terminal",
+                Some("code"),
                 Box::new({
                     let path = path_open.clone();
                     move |ws, cx| {
@@ -90,11 +101,11 @@ impl ContextMenuOverlay {
                 cx,
             ))
             // Separator
-            .child(div().h_px().bg(theme.palette.outline_variant))
+            .child(div().h_px().bg(theme.palette.outline_variant).my_1().mx_2())
             .child(menu_item(
                 "Move To...",
+                Some("arrow_forward"),
                 Box::new(move |ws, cx| {
-                    // Trigger picker with MoveSelection action
                     use crate::app_state::workspace::PickerAction;
                     ws.open_folder_picker(PickerAction::MoveSelection, cx);
                 }),
@@ -102,15 +113,17 @@ impl ContextMenuOverlay {
             ))
             .child(menu_item(
                 "Open With...",
+                Some("grid"),
                 Box::new(move |ws, cx| {
                     ws.open_with(path_open_with.clone(), cx);
                 }),
                 cx,
             ))
-            .child(div().h_px().bg(theme.palette.outline_variant))
+            .child(div().h_px().bg(theme.palette.outline_variant).my_1().mx_2())
             // Cut
             .child(menu_item(
                 "Cut",
+                None,
                 Box::new(move |ws, cx| {
                     ws.cut_selection(cx);
                 }),
@@ -119,6 +132,7 @@ impl ContextMenuOverlay {
             // Copy
             .child(menu_item(
                 "Copy",
+                Some("copy"),
                 Box::new(move |ws, cx| {
                     ws.copy_selection(cx);
                 }),
@@ -127,15 +141,17 @@ impl ContextMenuOverlay {
             // Paste
             .child(menu_item(
                 "Paste",
+                None,
                 Box::new(move |ws, cx| {
                     ws.paste_clipboard(cx);
                 }),
                 cx,
             ))
-            .child(div().h_px().bg(theme.palette.outline_variant))
+            .child(div().h_px().bg(theme.palette.outline_variant).my_1().mx_2())
             // Copy Path
             .child(menu_item(
                 "Copy Path",
+                Some("description"),
                 Box::new(move |ws, cx| {
                     ws.copy_text_to_clipboard(path_copy.to_string_lossy().to_string(), cx);
                     ws.show_toast(
@@ -149,15 +165,17 @@ impl ContextMenuOverlay {
             // Delete
             .child(menu_item(
                 "Delete",
+                Some("remove"),
                 Box::new(move |ws, cx| {
                     ws.delete_path(path_delete.clone(), cx);
                 }),
                 cx,
             ))
             // Properties
-            .child(div().h_px().bg(theme.palette.outline_variant))
+            .child(div().h_px().bg(theme.palette.outline_variant).my_1().mx_2())
             .child(menu_item(
                 "Properties",
+                Some("settings"),
                 Box::new(move |ws, cx| {
                     ws.active_overlay = Some(ActiveOverlay::DetailsDialog(path_props.clone()));
                     ws.details_metadata = None;
