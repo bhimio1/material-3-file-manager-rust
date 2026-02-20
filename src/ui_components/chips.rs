@@ -61,6 +61,7 @@ impl RenderOnce for Chip {
     fn render(self, _window: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.global::<Theme>();
 
+        // Styling based on selection state
         let (bg, fg, border) = if self.selected {
             (
                 theme.palette.secondary_container,
@@ -75,6 +76,7 @@ impl RenderOnce for Chip {
             )
         };
 
+        // Container with interaction styling
         let mut el = div()
             .flex()
             .items_center()
@@ -88,32 +90,45 @@ impl RenderOnce for Chip {
             .text_color(fg)
             .cursor_pointer()
             .hover(|s| {
-                s.bg(if self.selected {
-                    theme.palette.secondary_container
+                if self.selected {
+                    s.bg(theme.palette.secondary_container)
                 } else {
-                    theme.palette.surface_container_highest
-                })
+                    s.bg(theme.palette.surface_container_highest)
+                }
             })
+            // .active(|s| s.scale(1.05)) // Removed due to compilation error, need to investigate InteractiveElement trait usage
             .id(self.id);
 
         if let Some(handler) = self.on_click {
             el = el.on_click(move |event, window, cx| handler(event, window, cx));
         }
 
+        // Icon Logic
+        let icon_name: SharedString = if self.selected && matches!(self.chip_type, ChipType::Filter) {
+            if let Some(icon) = &self.icon {
+                match icon.as_ref() {
+                    "grid" => "grid_filled".into(),
+                    "list" => "list_filled".into(),
+                    _ => "check".into(), // Default to check for generic filters
+                }
+            } else {
+                "check".into()
+            }
+        } else if let Some(icon) = &self.icon {
+            icon.clone()
+        } else {
+            "".into()
+        };
+
         el.child(
-            if self.selected && matches!(self.chip_type, ChipType::Filter) {
-                crate::assets::icons::icon("check")
-                    .size_4()
-                    .text_color(fg)
-                    .into_any_element()
-            } else if let Some(icon) = &self.icon {
-                crate::assets::icons::icon(icon)
+            if !icon_name.is_empty() {
+                crate::assets::icons::icon(&icon_name)
                     .size_4()
                     .text_color(fg)
                     .into_any_element()
             } else {
                 div().into_any_element()
-            },
+            }
         )
         .child(div().text_sm().child(self.label))
     }
