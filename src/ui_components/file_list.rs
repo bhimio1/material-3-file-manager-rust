@@ -1,9 +1,9 @@
 use crate::app_state::config::ConfigManager;
 use crate::app_state::workspace::Workspace;
 use crate::theme_engine::theme::ThemeContext;
-use fuzzy_matcher::skim::SkimMatcherV2;
-use fuzzy_matcher::FuzzyMatcher;
+
 use gpui::prelude::*;
+use gpui::InteractiveElement;
 use gpui::*;
 use std::collections::HashSet;
 use std::path::PathBuf;
@@ -222,7 +222,7 @@ impl FileList {
                                                 .justify_center()
                                                 .w_full()
                                                 .h(px(64.0))
-                                                .child(crate::assets::icons::icon(icon_name).size_12())
+                                                .child(icon(icon_name).size_12())
                                         })
                                         .child(
                                             div()
@@ -329,7 +329,7 @@ impl FileList {
                                                 .w(px(24.0))
                                                 .flex()
                                                 .justify_center()
-                                                .child(crate::assets::icons::icon(icon_name).size_5()),
+                                                .child(icon(icon_name).size_5()),
                                         )
                                         .child(
                                             div()
@@ -385,7 +385,9 @@ impl Render for FileList {
 
         // Handle Grouped View
         if group_by_type && !grouped_files.is_empty() {
-            return self.render_grouped_view(grouped_files, selection, &palette, is_grid, cx).into_any_element();
+            return self
+                .render_grouped_view(grouped_files, selection, &palette, is_grid, cx)
+                .into_any_element();
         }
 
         let filtered_count = filtered_items.len();
@@ -568,81 +570,9 @@ impl Render for FileList {
                                             div()
                                                 .flex()
                                                 .items_center()
-                                                .p_2()
-                                                .m_1()
-                                                .rounded_md()
-                                                .bg(bg_color)
-                                                .text_color(text_color)
-                                                .hover(|s| s.bg(palette.surface_container_highest))
-                                                .on_click(move |event, _, cx| {
-                                                    if event.click_count() >= 2 {
-                                                        ws_dbl.update(cx, |ws, cx| {
-                                                            ws.open(path_dbl.clone(), cx);
-                                                        });
-                                                    }
-                                                })
-                                                .on_mouse_down(
-                                                    MouseButton::Left,
-                                                    move |event, _, cx| {
-                                                        cx.stop_propagation();
-                                                        ws_click.update(cx, |ws, cx| {
-                                                            if event.modifiers.control {
-                                                                ws.toggle_selection(
-                                                                    path_click.clone(),
-                                                                    cx,
-                                                                );
-                                                            } else if event.modifiers.shift {
-                                                                ws.select_range(
-                                                                    path_click.clone(),
-                                                                    cx,
-                                                                );
-                                                            } else {
-                                                                ws.set_selection(
-                                                                    path_click.clone(),
-                                                                    cx,
-                                                                );
-                                                            }
-                                                        });
-                                                    },
-                                                )
-                                                .on_mouse_down(
-                                                    MouseButton::Right,
-                                                    move |event, _, cx| {
-                                                        cx.stop_propagation();
-                                                        ws_right.update(cx, |ws, cx| {
-                                                            if !ws.selection.contains(&path_right) {
-                                                                ws.set_selection(
-                                                                    path_right.clone(),
-                                                                    cx,
-                                                                );
-                                                            }
-                                                            ws.open_context_menu(
-                                                                event.position,
-                                                                Some(path_right.clone()),
-                                                                cx,
-                                                            );
-                                                        });
-                                                    },
-                                                )
-                                                .child(
-                                                    if let Some(thumb) = thumbnail_path {
-                                                        let path_str = format!("file://{}", thumb.to_string_lossy());
-                                                        div().flex().children(vec![
-                                                            div().w(px(4.0)).h(px(4.0)).bg(gpui::blue()).rounded_full().into_any_element(),
-                                                            img(path_str)
-                                                                .w(px(64.0))
-                                                                .h(px(64.0))
-                                                                .object_fit(ObjectFit::Cover)
-                                                                .rounded_md()
-                                                                .into_any_element()
-                                                        ]).into_any_element()
-                                                    } else {
-                                                        div().flex().items_center().justify_center().children(vec![
-                                                            // Revert to svg(), explicit size
-                                                            icon(icon_name).size_12().into_any_element()
-                                                        ]).into_any_element()
-                                                    }
-                                                )
+                                                .justify_center()
+                                                .w_full()
+                                                .h(px(64.0))
                                                 .child(
                                                     img(path_str)
                                                         .w(px(64.0))
@@ -657,8 +587,9 @@ impl Render for FileList {
                                                 .justify_center()
                                                 .w_full()
                                                 .h(px(64.0))
-                                                .child(crate::assets::icons::icon(icon_name).size_12())
+                                                .child(icon(icon_name).size_12())
                                         })
+
                                         .child(
                                             div()
                                                 .mt_2()
@@ -669,79 +600,97 @@ impl Render for FileList {
                                                 .child(item.name.clone()),
                                         )
                                         .into_any_element()
-                                         },
-                                     ))
-                                     .into_any_element()
-                             })
-                             .collect::<Vec<_>>()
+                                }))
+                            .into_any_element()
+                    })
+                    .collect::<Vec<_>>()
+
                      } else {
                          // LIST VIEW
-                         let items_slice = &filtered_items[range];
-                         items_slice
-                             .iter()
-                             .enumerate()
-                             .map(|(i, item)| {
-                                 // INLINE RENDER LIST ITEM (Duplicate 3)
-                                    let is_selected = selection.contains(&item.path);
-                                    let item_path = item.path.clone();
-                                    let is_dir = item.is_dir;
+                        let items_slice = &filtered_items[range];
+                        items_slice
+                            .iter()
+                            .enumerate()
+                            .map(|(i, item)| {
+                                let is_selected = selection.contains(&item.path);
+                                let item_path = item.path.clone();
+                                let is_dir = item.is_dir;
 
-                                    let bg_color = if is_selected {
-                                        Hsla::from(palette.secondary_container)
-                                    } else {
-                                        gpui::hsla(0., 0., 0., 0.)
-                                    };
-                                    let text_color = if is_selected {
-                                        palette.on_secondary_container
-                                    } else {
-                                        palette.on_surface
-                                    };
-                                    let sub_text_color = if is_selected {
-                                        palette.on_secondary_container
-                                    } else {
-                                        palette.on_surface_variant
-                                    };
-                                    let ext = item_path
-                                        .extension()
-                                        .and_then(|e: &std::ffi::OsStr| e.to_str())
-                                        .unwrap_or("")
-                                        .to_lowercase();
+                                let bg_color = if is_selected {
+                                    Hsla::from(palette.secondary_container)
+                                } else {
+                                    gpui::hsla(0., 0., 0., 0.)
+                                };
+                                let text_color = if is_selected {
+                                    palette.on_secondary_container
+                                } else {
+                                    palette.on_surface
+                                };
+                                let sub_text_color = if is_selected {
+                                    palette.on_secondary_container
+                                } else {
+                                    palette.on_surface_variant
+                                };
+                                let ext = item_path
+                                    .extension()
+                                    .and_then(|e: &std::ffi::OsStr| e.to_str())
+                                    .unwrap_or("")
+                                    .to_lowercase();
 
-                                    let icon_name = if is_dir {
-                                        "folder"
-                                    } else {
-                                        match ext.as_str() {
-                                            "png" | "jpg" | "jpeg" | "webp" => "image",
-                                            "mp4" | "mkv" | "webm" => "video",
-                                            "mp3" | "wav" | "ogg" => "audio",
-                                            _ => "file",
+                                let icon_name = if is_dir {
+                                    "folder"
+                                } else {
+                                    match ext.as_str() {
+                                        "png" | "jpg" | "jpeg" | "webp" => "image",
+                                        "mp4" | "mkv" | "webm" => "video",
+                                        "mp3" | "wav" | "ogg" => "audio",
+                                        _ => "file",
+                                    }
+                                };
+
+                                let ws_click = workspace.clone();
+                                let path_click = item_path.clone();
+                                let ws_dbl = workspace.clone();
+                                let path_dbl = item_path.clone();
+                                let ws_right = workspace.clone();
+                                let path_right = item_path.clone();
+
+                                div()
+                                    .id(i)
+                                    .h_10()
+                                    .flex()
+                                    .items_center()
+                                    .w_full()
+                                    .px_3()
+                                    .border_b_1()
+                                    .border_color(Hsla::from(palette.outline_variant).opacity(0.1))
+                                    .bg(bg_color)
+                                    .text_color(text_color)
+                                    .hover(|s| s.bg(palette.surface_container_highest))
+                                    .on_click(move |event, _, cx| {
+                                        if event.click_count() >= 2 {
+                                            ws_dbl.update(cx, |ws, cx| {
+                                                ws.open(path_dbl.clone(), cx);
+                                            });
                                         }
-                                    };
-
-                                    let ws_click = workspace.clone();
-                                    let path_click = item_path.clone();
-                                    let ws_dbl = workspace.clone();
-                                    let path_dbl = item_path.clone();
-                                    let ws_right = workspace.clone();
-                                    let path_right = item_path.clone();
-
-                                    div()
-                                        .id(i)
-                                        .h_10()
-                                        .flex()
-                                        .items_center()
-                                        .w_full()
-                                        .px_3()
-                                        .border_b_1()
-                                        .border_color(Hsla::from(palette.outline_variant).opacity(0.1))
-                                        .bg(bg_color)
-                                        .text_color(text_color)
-                                        .hover(|s| s.bg(palette.surface_container_highest))
-                                        .on_click(move |event, _, cx| {
-                                            if event.click_count() >= 2 {
-                                                ws_dbl.update(cx, |ws, cx| {
-                                                    ws.open(path_dbl.clone(), cx);
-                                                });
+                                    })
+                                    .on_mouse_down(MouseButton::Left, move |event, _, cx| {
+                                        cx.stop_propagation();
+                                        ws_click.update(cx, |ws, cx| {
+                                            if event.modifiers.control {
+                                                ws.toggle_selection(path_click.clone(), cx);
+                                            } else if event.modifiers.shift {
+                                                ws.select_range(path_click.clone(), cx);
+                                            } else {
+                                                ws.set_selection(path_click.clone(), cx);
+                                            }
+                                        });
+                                    })
+                                    .on_mouse_down(MouseButton::Right, move |event, _, cx| {
+                                        cx.stop_propagation();
+                                        ws_right.update(cx, |ws, cx| {
+                                            if !ws.selection.contains(&path_right) {
+                                                ws.set_selection(path_right.clone(), cx);
                                             }
                                             ws.open_context_menu(
                                                 event.position,
@@ -757,9 +706,13 @@ impl Render for FileList {
                                             .justify_center()
                                             .child(icon(icon_name).size_5()),
                                     )
-                                    .child(div().ml_3().flex_grow().min_w_0().child(
-                                        div().text_ellipsis().child(item.name.clone()),
-                                    ))
+                                    .child(
+                                        div()
+                                            .ml_3()
+                                            .flex_grow()
+                                            .min_w_0()
+                                            .child(div().text_ellipsis().child(item.name.clone())),
+                                    )
                                     .child(
                                         div()
                                             .w_24()
@@ -781,63 +734,6 @@ impl Render for FileList {
                     }
                 })
                 .size_full()
-                                        })
-                                        .on_mouse_down(MouseButton::Left, move |event, _, cx| {
-                                            cx.stop_propagation();
-                                            ws_click.update(cx, |ws, cx| {
-                                                if event.modifiers.control {
-                                                    ws.toggle_selection(path_click.clone(), cx);
-                                                } else if event.modifiers.shift {
-                                                    ws.select_range(path_click.clone(), cx);
-                                                } else {
-                                                    ws.set_selection(path_click.clone(), cx);
-                                                }
-                                            });
-                                        })
-                                        .on_mouse_down(MouseButton::Right, move |event, _, cx| {
-                                            cx.stop_propagation();
-                                            ws_right.update(cx, |ws, cx| {
-                                                if !ws.selection.contains(&path_right) {
-                                                    ws.set_selection(path_right.clone(), cx);
-                                                }
-                                                ws.open_context_menu(event.position, Some(path_right.clone()), cx);
-                                            });
-                                        })
-                                        .child(
-                                            div()
-                                                .w(px(24.0))
-                                                .flex()
-                                                .justify_center()
-                                                .child(crate::assets::icons::icon(icon_name).size_5()),
-                                        )
-                                        .child(
-                                            div()
-                                                .ml_3()
-                                                .flex_grow()
-                                                .min_w_0()
-                                                .child(div().text_ellipsis().child(item.name.clone())),
-                                        )
-                                        .child(
-                                            div()
-                                                .w_24()
-                                                .text_sm()
-                                                .text_color(sub_text_color)
-                                                .child(item.formatted_date.clone()),
-                                        )
-                                        .child(
-                                            div()
-                                                .w_20()
-                                                .text_sm()
-                                                .text_right()
-                                                .text_color(sub_text_color)
-                                                .child(item.formatted_size.clone()),
-                                        )
-                                        .into_any_element()
-                             })
-                             .collect::<Vec<_>>()
-                     }
-                 })
-                 .size_full()
             })
             .child(if is_loading {
                 div()
