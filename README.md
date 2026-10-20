@@ -53,7 +53,24 @@ A fast, keyboard-friendly Linux file manager built with [egui](https://github.co
 - Mount and unmount from the sidebar's right-click menu. Drive can mount automatically at startup, and you can choose another mount folder or connect more accounts. If rclone already has a signed-in Drive remote, it is reused instead of signing in again.
 - Requires [rclone](https://rclone.org/install/) and FUSE 3 (`fusermount3`). The mount is an `rclone mount --vfs-cache-mode full` that keeps running after the app closes, until you unmount or log out.
 
-## Building
+## Install
+
+From the AUR, prebuilt or built from source:
+
+```sh
+paru -S material-3-file-manager-bin   # or material-3-file-manager-git
+```
+
+On Arch, with the included PKGBUILD:
+
+```sh
+cd packaging
+makepkg -si
+```
+
+Prebuilt x86_64 binaries are attached to [releases](https://github.com/bhimio1/material-3-file-manager-rust/releases). The end4-pC fork installs the latest one automatically.
+
+To build it yourself:
 
 ```sh
 cargo build --release
@@ -66,13 +83,19 @@ Runtime requirements on Linux: an OpenGL driver, `libxkbcommon` (plus `libxkbcom
 
 Settings are edited in the app (Ctrl+,) and stored in `~/.config/m3fm/config.toml`. The file is watched: edits made by hand apply immediately. Config files from the earlier gpui build load unchanged.
 
-### Theming with matugen
+### Theming
+
+On an end4-pC or illogical-impulse desktop, nothing needs setting up: see the order below. Otherwise, use matugen:
 
 1. In Settings → Matugen, click **Export template**.
 2. Add the snippet shown there to `~/.config/matugen/config.toml`.
 3. Run matugen. The app picks up `~/.config/material_3_file_manager/theme.json` live.
 
-With the color source on **Auto**, `theme.json` is used whenever it exists. Otherwise the palette is generated from the seed color, in light, dark or system mode.
+With the color source on **Auto**, the palette comes from, in order:
+
+1. the end4-pC / illogical-impulse shell's `~/.local/state/quickshell/user/generated/colors.json`, so the file manager always matches the shell and follows wallpaper changes live;
+2. matugen's `theme.json`, set up as above;
+3. the seed color, in light, dark or system mode.
 
 ## Project layout
 
@@ -91,5 +114,9 @@ src/
 ```
 
 Run the tests with `cargo test`. Set `M3FM_PERF=1` to print per-second frame timings, the top repaint causes, and the cost of directory listings to stderr.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
 
 Fonts: Inter (SIL OFL 1.1, see `assets/fonts/LICENSE-Inter.txt`). Icons: Material Symbols, via `egui_material_icons`.

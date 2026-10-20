@@ -3,6 +3,7 @@ name = "material_3_file_manager"
 version = "0.2.0"
 edition = "2021"
 description = "A Material 3 file manager built with egui"
+license = "MIT"
 
 [[bin]]
 name = "m3fm"

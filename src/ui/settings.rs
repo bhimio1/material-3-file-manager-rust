@@ -218,10 +218,14 @@ pub fn show(ui: &mut Ui, app: &mut App) {
             });
 
             card(ui, "Appearance", |ui| {
-                row(ui, "Color source", match effective_source {
-                    ThemeSource::Matugen => "Using colors from matugen's theme.json (live-reloads when it changes).",
-                    _ => "Using a palette generated from the seed color below.",
-                }, |ui| {
+                let source_desc = match effective_source {
+                    ThemeSource::Matugen if matugen::palette_path() == matugen::end4_colors_path() => {
+                        "Using the end4-pC / illogical-impulse shell's colors (follows your wallpaper live).".to_string()
+                    }
+                    ThemeSource::Matugen => "Using colors from matugen's theme.json (live-reloads when it changes).".to_string(),
+                    _ => "Using a palette generated from the seed color below.".to_string(),
+                };
+                row(ui, "Color source", &source_desc, |ui| {
                     changed |= segmented(ui, &mut config.ui.theme_source, &[
                         (ThemeSource::Auto, ICON_AUTO_AWESOME, "Auto"),
                         (ThemeSource::Matugen, ICON_WALLPAPER, "Matugen"),

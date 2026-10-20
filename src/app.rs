@@ -135,6 +135,13 @@ impl App {
                     let _ = std::fs::create_dir_all(&dir);
                     let _ = w.watch(&dir, notify::RecursiveMode::NonRecursive);
                 }
+                // The shell's folder belongs to it, so only watch it if it exists.
+                if let Some(dir) = matugen::end4_colors_path()
+                    .and_then(|p| p.parent().map(Path::to_path_buf))
+                    .filter(|d| d.is_dir())
+                {
+                    let _ = w.watch(&dir, notify::RecursiveMode::NonRecursive);
+                }
                 w
             })
         };
@@ -224,9 +231,7 @@ impl App {
 
     /// Which palette source is in effect right now.
     pub fn effective_theme_source(&self) -> ThemeSource {
-        let has_json = matugen::theme_json_path()
-            .map(|p| p.exists())
-            .unwrap_or(false);
+        let has_json = matugen::palette_path().is_some();
         match self.config.ui.theme_source {
             ThemeSource::Auto if has_json => ThemeSource::Matugen,
             ThemeSource::Auto => ThemeSource::Seed,
@@ -239,11 +244,11 @@ impl App {
         let dark = self.wants_dark();
         let palette = match self.effective_theme_source() {
             ThemeSource::Matugen => {
-                let path = matugen::theme_json_path().unwrap_or_default();
+                let path = matugen::palette_path().unwrap_or_default();
                 match M3Palette::from_theme_json(&path) {
                     Ok(p) => p,
                     Err(e) => {
-                        self.toast(format!("Couldn't read theme.json: {e}"), ToastKind::Error);
+                        self.toast(format!("Couldn't read {}: {e}", path.display()), ToastKind::Error);
                         M3Palette::from_seed(&self.config.ui.seed_color, dark)
                     }
                 }
@@ -319,10 +324,11 @@ impl App {
                 }
             }
         }
-        if changed
-            .iter()
-            .any(|p| p.file_name().map(|n| n == "theme.json").unwrap_or(false))
-        {
+        let palette = matugen::palette_path();
+        if changed.iter().any(|p| {
+            Some(p) == palette.as_ref()
+                || p.file_name().is_some_and(|n| n == "theme.json" || n == "colors.json")
+        }) {
             self.apply_theme();
         }
     }
