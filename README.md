@@ -109,4 +109,8 @@ src/
 
 Run the tests with `cargo test`. Set `M3FM_PERF=1` to print per-second frame timings, the top repaint causes, and the cost of directory listings to stderr.
 
+## License
+
+MIT, see [LICENSE](LICENSE).
+
 Fonts: Inter (SIL OFL 1.1, see `assets/fonts/LICENSE-Inter.txt`). Icons: Material Symbols, via `egui_material_icons`.

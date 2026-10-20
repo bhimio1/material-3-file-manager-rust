@@ -5,7 +5,7 @@ pkgrel=1
 pkgdesc="Material 3 file manager built with egui, themed by end4-pC / matugen"
 arch=('x86_64' 'aarch64')
 url="https://github.com/bhimio1/material-3-file-manager-rust"
-license=('unknown')  # TODO: pick a license
+license=('MIT')
 depends=('libxkbcommon' 'wayland' 'libglvnd' 'fontconfig' 'xdg-utils')
 makedepends=('cargo' 'git')
 optdepends=(
@@ -46,5 +46,6 @@ package() {
   cd "$pkgname"
   install -Dm755 target/release/m3fm "$pkgdir/usr/bin/m3fm"
   install -Dm644 packaging/material_3_file_manager.desktop "$pkgdir/usr/share/applications/material_3_file_manager.desktop"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
   install -Dm644 assets/fonts/LICENSE-Inter.txt "$pkgdir/usr/share/licenses/$pkgname/LICENSE-Inter.txt"
 }
