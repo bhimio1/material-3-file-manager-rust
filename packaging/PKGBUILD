@@ -14,7 +14,7 @@ optdepends=(
   'xdg-desktop-portal: file chooser portal (m3fm --portal)'
 )
 provides=('material-3-file-manager')
-conflicts=('material-3-file-manager')
+conflicts=('material-3-file-manager' 'material-3-file-manager-bin')
 source=("$pkgname::git+$url.git")
 sha256sums=('SKIP')
 

@@ -55,6 +55,12 @@ A fast, keyboard-friendly Linux file manager built with [egui](https://github.co
 
 ## Install
 
+From the AUR, prebuilt or built from source:
+
+```sh
+paru -S material-3-file-manager-bin   # or material-3-file-manager-git
+```
+
 On Arch, with the included PKGBUILD:
 
 ```sh

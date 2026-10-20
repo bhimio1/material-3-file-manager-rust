@@ -1,0 +1,28 @@
+# Maintainer: bhimio1
+# Template: the release workflow fills in @PKGVER@ and @SHA256@ and publishes
+# this to the AUR as material-3-file-manager-bin.
+pkgname=material-3-file-manager-bin
+pkgver=@PKGVER@
+pkgrel=1
+pkgdesc="Material 3 file manager built with egui, themed by end4-pC / matugen"
+arch=('x86_64')
+url="https://github.com/bhimio1/material-3-file-manager-rust"
+license=('MIT')
+depends=('libxkbcommon' 'wayland' 'libglvnd' 'fontconfig' 'xdg-utils')
+optdepends=(
+  'rclone: Google Drive'
+  'fuse3: mounting Google Drive'
+  'xdg-desktop-portal: file chooser portal (m3fm --portal)'
+)
+provides=('material-3-file-manager')
+conflicts=('material-3-file-manager' 'material-3-file-manager-git')
+source=("$pkgname-$pkgver.tar.gz::$url/releases/download/v$pkgver/m3fm-x86_64-linux.tar.gz")
+sha256sums=('@SHA256@')
+
+package() {
+  cd "m3fm-x86_64-linux"
+  install -Dm755 m3fm "$pkgdir/usr/bin/m3fm"
+  install -Dm644 material_3_file_manager.desktop "$pkgdir/usr/share/applications/material_3_file_manager.desktop"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 LICENSE-Inter.txt "$pkgdir/usr/share/licenses/$pkgname/LICENSE-Inter.txt"
+}
