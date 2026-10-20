@@ -102,6 +102,11 @@ pub enum Dialog {
     OpenWith(Box<OpenWith>),
     Picker(Box<Picker>),
     Shortcuts,
+    /// Google sign-in in progress (state lives in `app.cloud`).
+    CloudConnect,
+    ConfirmDisconnect {
+        remote: String,
+    },
 }
 
 impl Dialog {
@@ -459,7 +464,7 @@ pub fn show(ctx: &egui::Context, app: &mut App) {
                     if widgets::button(ui, ButtonKind::Danger, Some(ICON_DELETE_FOREVER), "Delete")
                         .clicked()
                     {
-                        let job = ops::remove(paths.clone(), true, app.notify());
+                        let job = ops::remove(paths.clone(), ops::JobKind::Delete, app.notify());
                         app.jobs.push(job);
                         keep = false;
                     }
@@ -507,6 +512,72 @@ pub fn show(ctx: &egui::Context, app: &mut App) {
                 ui.set_width(720.0);
                 ui.set_height(520.0);
                 picker_ui(ui, app, picker, &mut keep);
+            });
+            keep && !r.should_close()
+        }
+
+        Dialog::CloudConnect => {
+            let auth_url = app
+                .cloud
+                .connect
+                .as_ref()
+                .and_then(|c| c.auth_url.lock().unwrap().clone());
+            let waiting = app.cloud.connect.is_some() || app.cloud.preparing_connect;
+            let mut cancel = false;
+            let r = modal.show(ctx, |ui| {
+                ui.set_width(420.0);
+                title(ui, ICON_ADD_TO_DRIVE, "Connect Google Drive");
+                ui.vertical_centered(|ui| {
+                    ui.add(egui::Spinner::new().size(28.0).color(p.primary));
+                    ui.add_space(10.0);
+                    let text = if app.cloud.preparing_connect {
+                        "Checking for an existing rclone setup…"
+                    } else {
+                        "Sign in with Google in the browser window that just opened, then allow access. This window updates when you're done."
+                    };
+                    ui.add(egui::Label::new(RichText::new(text).color(p.on_surface_variant)).wrap());
+                    if let Some(url) = &auth_url {
+                        ui.add_space(10.0);
+                        ui.label(RichText::new("No browser window?").size(12.5).color(p.on_surface_variant));
+                        if widgets::button(ui, ButtonKind::Text, Some(ICON_OPEN_IN_NEW), "Open sign-in page").clicked() {
+                            app.actions.push(Action::OpenUrl(url.clone()));
+                        }
+                    }
+                });
+                right_buttons(ui, |ui| {
+                    cancel = widgets::button(ui, ButtonKind::Text, None, "Cancel").clicked();
+                });
+            });
+            if cancel || r.should_close() {
+                app.actions.push(Action::CloudCancelConnect);
+                false
+            } else {
+                // Closes itself once sign-in finished (or failed).
+                waiting
+            }
+        }
+
+        Dialog::ConfirmDisconnect { remote } => {
+            let mut keep = true;
+            let r = modal.show(ctx, |ui| {
+                ui.set_width(400.0);
+                title(ui, ICON_CLOUD_OFF, "Disconnect Google Drive?");
+                ui.add(
+                    egui::Label::new(
+                        RichText::new("The drive is unmounted and this computer is signed out of it. Your files stay in Google Drive.")
+                            .color(p.on_surface_variant),
+                    )
+                    .wrap(),
+                );
+                right_buttons(ui, |ui| {
+                    if widgets::button(ui, ButtonKind::Danger, None, "Disconnect").clicked() {
+                        app.actions.push(Action::CloudDisconnectConfirmed(remote.clone()));
+                        keep = false;
+                    }
+                    if widgets::button(ui, ButtonKind::Text, None, "Cancel").clicked() {
+                        keep = false;
+                    }
+                });
             });
             keep && !r.should_close()
         }

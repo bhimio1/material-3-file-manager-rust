@@ -160,7 +160,7 @@ pub fn show(ui: &mut Ui, app: &mut App) {
     let mut actions = Vec::new();
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         egui::Frame::new().inner_margin(egui::Margin::symmetric(32, 28)).show(ui, |ui| {
-            ui.set_max_width(1100.0);
+            ui.set_max_width(ui.available_width().min(1100.0));
             ui.label(RichText::new(greeting()).size(32.0).color(p.on_surface));
             ui.label(
                 RichText::new(chrono::Local::now().format("%A, %B %-d").to_string())
@@ -180,34 +180,53 @@ pub fn show(ui: &mut Ui, app: &mut App) {
             });
 
             section_title(ui, "Storage", |_| {});
-            let drives = app.drives.clone();
-            card_grid(ui, drives.len(), 260.0, 96.0, |ui, i, rect| {
-                let d = &drives[i];
-                let (_, resp) = clickable_card(ui, rect.size(), p.surface_container, Id::unique(("drive", &d.mount)));
-                paint_icon(ui, d.icon(), pos2(rect.left() + 30.0, rect.top() + 30.0), 24.0, p.primary);
-                ui.painter().text(pos2(rect.left() + 52.0, rect.top() + 30.0), Align2::LEFT_CENTER, &d.name,
-                    widgets::title_font(15.0), p.on_surface);
-                let used = d.total.saturating_sub(d.available);
-                ui.painter().text(
-                    pos2(rect.left() + 18.0, rect.top() + 58.0),
-                    Align2::LEFT_CENTER,
-                    format!("{} used of {}", format_size(used), format_size(d.total)),
-                    FontId::proportional(12.5),
-                    p.on_surface_variant,
-                );
-                ui.painter().text(
-                    pos2(rect.right() - 18.0, rect.top() + 58.0),
-                    Align2::RIGHT_CENTER,
-                    format!("{:.0}%", d.used_fraction() * 100.0),
-                    FontId::proportional(12.5),
-                    p.on_surface_variant,
-                );
-                let bar = Rect::from_min_size(pos2(rect.left() + 18.0, rect.top() + 74.0), vec2(rect.width() - 36.0, 6.0));
-                ui.painter().rect_filled(bar, CornerRadius::same(3), p.secondary_container);
-                let fill = Rect::from_min_size(bar.min, vec2(bar.width() * d.used_fraction(), bar.height()));
-                ui.painter().rect_filled(fill, CornerRadius::same(3), if d.used_fraction() > 0.9 { p.error } else { p.primary });
-                if resp.on_hover_text(d.mount.to_string_lossy()).clicked() {
-                    actions.push(Action::Navigate(Location::Folder(d.mount.clone())));
+            // Local drives, then cloud drives (or an invitation to connect one).
+            let mut cards: Vec<StorageCard> = app
+                .drives
+                .iter()
+                .map(|d| StorageCard {
+                    id: d.mount.to_string_lossy().into_owned(),
+                    icon: d.icon(),
+                    name: d.name.clone(),
+                    usage: Some((d.total.saturating_sub(d.available), d.total)),
+                    detail: None,
+                    hover: d.mount.to_string_lossy().into_owned(),
+                    action: Action::Navigate(Location::Folder(d.mount.clone())),
+                })
+                .collect();
+            for d in &app.config.cloud_drives {
+                let mounted = app.cloud.mounted.contains(&d.remote);
+                let quota = app.cloud.quota.get(&d.remote).filter(|_| mounted);
+                let detail = match (app.cloud.busy.get(&d.remote), mounted, quota) {
+                    (Some(b), _, _) => Some(b.to_string()),
+                    (None, false, _) => Some("Not mounted — click to mount".into()),
+                    (None, true, None) => Some("Mounted".into()),
+                    (None, true, Some(_)) => None,
+                };
+                cards.push(StorageCard {
+                    id: d.remote.clone(),
+                    icon: if mounted { ICON_CLOUD } else { ICON_CLOUD_OFF },
+                    name: d.name.clone(),
+                    usage: quota.map(|q| (q.used, q.total)),
+                    detail,
+                    hover: places::tilde(&d.mount_point),
+                    action: Action::CloudOpen(d.remote.clone()),
+                });
+            }
+            if app.config.cloud_drives.is_empty() && matches!(app.cloud.rclone, Some(Some(_))) {
+                cards.push(StorageCard {
+                    id: "connect-gdrive".into(),
+                    icon: ICON_ADD_TO_DRIVE,
+                    name: "Google Drive".into(),
+                    usage: None,
+                    detail: Some("Connect your Drive to browse it here".into()),
+                    hover: "Sign in with Google".into(),
+                    action: Action::CloudConnect,
+                });
+            }
+            card_grid(ui, cards.len(), 260.0, 96.0, |ui, i, rect| {
+                if let Some(action) = storage_card(ui, rect, &cards[i]) {
+                    actions.push(action);
                 }
             });
 
@@ -236,4 +255,86 @@ pub fn show(ui: &mut Ui, app: &mut App) {
         });
     });
     app.actions.extend(actions);
+}
+
+struct StorageCard {
+    id: String,
+    icon: egui_material_icons::MaterialIcon,
+    name: String,
+    /// (used, total) bytes.
+    usage: Option<(u64, u64)>,
+    /// Shown instead of the usage line.
+    detail: Option<String>,
+    hover: String,
+    action: Action,
+}
+
+fn storage_card(ui: &mut Ui, rect: Rect, card: &StorageCard) -> Option<Action> {
+    let p = widgets::palette(ui);
+    let (_, resp) = clickable_card(
+        ui,
+        rect.size(),
+        p.surface_container,
+        Id::unique(("storage", &card.id)),
+    );
+    paint_icon(
+        ui,
+        card.icon,
+        pos2(rect.left() + 30.0, rect.top() + 30.0),
+        24.0,
+        p.primary,
+    );
+    ui.painter().text(
+        pos2(rect.left() + 52.0, rect.top() + 30.0),
+        Align2::LEFT_CENTER,
+        &card.name,
+        widgets::title_font(15.0),
+        p.on_surface,
+    );
+    let small = FontId::proportional(12.5);
+    if let (None, Some((used, total))) = (&card.detail, card.usage) {
+        let fraction = if total == 0 {
+            0.0
+        } else {
+            used as f32 / total as f32
+        };
+        ui.painter().text(
+            pos2(rect.left() + 18.0, rect.top() + 58.0),
+            Align2::LEFT_CENTER,
+            format!("{} used of {}", format_size(used), format_size(total)),
+            small.clone(),
+            p.on_surface_variant,
+        );
+        ui.painter().text(
+            pos2(rect.right() - 18.0, rect.top() + 58.0),
+            Align2::RIGHT_CENTER,
+            format!("{:.0}%", fraction * 100.0),
+            small,
+            p.on_surface_variant,
+        );
+        let bar = Rect::from_min_size(
+            pos2(rect.left() + 18.0, rect.top() + 74.0),
+            vec2(rect.width() - 36.0, 6.0),
+        );
+        ui.painter()
+            .rect_filled(bar, CornerRadius::same(3), p.secondary_container);
+        let fill = Rect::from_min_size(bar.min, vec2(bar.width() * fraction, bar.height()));
+        ui.painter().rect_filled(
+            fill,
+            CornerRadius::same(3),
+            if fraction > 0.9 { p.error } else { p.primary },
+        );
+    } else {
+        let text = card.detail.clone().unwrap_or_default();
+        ui.painter().text(
+            pos2(rect.left() + 18.0, rect.top() + 62.0),
+            Align2::LEFT_CENTER,
+            text,
+            small,
+            p.on_surface_variant,
+        );
+    }
+    resp.on_hover_text(&card.hover)
+        .clicked()
+        .then(|| card.action.clone())
 }

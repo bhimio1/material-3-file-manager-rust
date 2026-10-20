@@ -88,7 +88,11 @@ pub fn show(ui: &mut Ui, app: &mut App) {
 fn segments(path: &Path) -> Vec<(String, PathBuf)> {
     let home = places::home();
     let mut out = Vec::new();
-    let rest: &Path = if let Ok(rel) = path.strip_prefix(&home) {
+    let cloud = places::cloud_root(path);
+    let rest: &Path = if let Some((root, name)) = &cloud {
+        out.push((name.clone(), root.clone()));
+        path.strip_prefix(root).unwrap_or(Path::new(""))
+    } else if let Ok(rel) = path.strip_prefix(&home) {
         out.push(("Home".to_string(), home.clone()));
         rel
     } else {
@@ -182,6 +186,8 @@ fn location_bar(ui: &mut Ui, app: &mut App, actions: &mut Vec<Action>) {
         if i == 0 {
             let icon = if label == "Home" {
                 ICON_HOME
+            } else if path != Path::new("/") {
+                ICON_CLOUD
             } else {
                 ICON_HARD_DRIVE
             };
@@ -497,8 +503,18 @@ fn search_field(ui: &mut Ui, app: &mut App, actions: &mut Vec<Action>) {
     let _ = actions;
 }
 
+fn app_cloud_folder(folder: &Path, mounts: &[PathBuf]) -> bool {
+    mounts.iter().any(|m| folder.starts_with(m))
+}
+
 fn search_options_row(ui: &mut Ui, app: &mut App) {
     let p = app.palette.clone();
+    let cloud_mounts: Vec<PathBuf> = app
+        .config
+        .cloud_drives
+        .iter()
+        .map(|d| d.mount_point.clone())
+        .collect();
     ui.add_space(6.0);
     ui.horizontal(|ui| {
         ui.add_space(156.0);
@@ -514,7 +530,25 @@ fn search_options_row(ui: &mut Ui, app: &mut App) {
         {
             recursive = !recursive;
         }
-        if filter_chip(ui, "Search file contents", content, Some(ICON_DESCRIPTION)).clicked() {
+        let on_cloud = tab
+            .folder()
+            .map(|f| app_cloud_folder(f, &cloud_mounts))
+            .unwrap_or(false);
+        let chip = ui
+            .add_enabled_ui(!on_cloud, |ui| {
+                filter_chip(
+                    ui,
+                    "Search file contents",
+                    content && !on_cloud,
+                    Some(ICON_DESCRIPTION),
+                )
+            })
+            .inner;
+        if on_cloud {
+            chip.on_disabled_hover_text(
+                "Not available on cloud drives — it would download every file",
+            );
+        } else if chip.clicked() {
             content = !content;
         }
         if (recursive, content) != (tab.search.recursive, tab.search.content) {

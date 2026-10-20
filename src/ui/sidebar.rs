@@ -199,6 +199,8 @@ pub fn show(ui: &mut Ui, app: &mut App) {
                     .rect_filled(zone, CornerRadius::same(3), p.primary);
             }
 
+            cloud_section(ui, app, current.as_deref(), &mut actions);
+
             section_header(ui, "Drives");
             for drive in app.drives.clone() {
                 let selected = current.as_deref() == Some(drive.mount.as_path());
@@ -210,24 +212,7 @@ pub fn show(ui: &mut Ui, app: &mut App) {
                         format_size(drive.total),
                         drive.file_system
                     ));
-                // Thin usage bar under the label.
-                let r = response.rect;
-                let bar = Rect::from_min_size(
-                    pos2(r.left() + 50.0, r.bottom() - 9.0),
-                    vec2((r.width() - 70.0).max(10.0), 3.0),
-                );
-                ui.painter()
-                    .rect_filled(bar, CornerRadius::same(2), p.surface_container_highest);
-                let used = Rect::from_min_size(
-                    bar.min,
-                    vec2(bar.width() * drive.used_fraction(), bar.height()),
-                );
-                let color = if drive.used_fraction() > 0.9 {
-                    p.error
-                } else {
-                    p.primary
-                };
-                ui.painter().rect_filled(used, CornerRadius::same(2), color);
+                usage_bar(ui, response.rect, drive.used_fraction());
                 if response.clicked() {
                     actions.push(Action::Navigate(Location::Folder(drive.mount.clone())));
                 }
@@ -256,4 +241,92 @@ pub fn show(ui: &mut Ui, app: &mut App) {
     });
 
     app.actions.extend(actions);
+}
+
+/// Usage bar under a sidebar item's label.
+fn usage_bar(ui: &Ui, item: Rect, fraction: f32) {
+    let p = widgets::palette(ui);
+    let bar = Rect::from_min_size(
+        pos2(item.left() + 50.0, item.bottom() - 9.0),
+        vec2((item.width() - 70.0).max(10.0), 3.0),
+    );
+    ui.painter()
+        .rect_filled(bar, CornerRadius::same(2), p.surface_container_highest);
+    let used = Rect::from_min_size(bar.min, vec2(bar.width() * fraction, bar.height()));
+    let color = if fraction > 0.9 { p.error } else { p.primary };
+    ui.painter().rect_filled(used, CornerRadius::same(2), color);
+}
+
+fn cloud_section(ui: &mut Ui, app: &App, current: Option<&Path>, actions: &mut Vec<Action>) {
+    section_header(ui, "Cloud");
+    if app.config.cloud_drives.is_empty() {
+        let label = if app.cloud.connect.is_some() || app.cloud.preparing_connect {
+            "Connecting…"
+        } else {
+            "Connect Google Drive"
+        };
+        let r = nav_item(ui, ICON_ADD_TO_DRIVE, label, false, None);
+        let r = if app.cloud.rclone_missing() {
+            r.on_hover_text("Needs rclone — see Settings → Cloud storage")
+        } else {
+            r.on_hover_text("Sign in with Google and mount your Drive as a folder")
+        };
+        if r.clicked() {
+            actions.push(if app.cloud.rclone_missing() {
+                Action::Navigate(Location::Settings)
+            } else {
+                Action::CloudConnect
+            });
+        }
+        return;
+    }
+    for drive in &app.config.cloud_drives {
+        let mounted = app.cloud.mounted.contains(&drive.remote);
+        let busy = app.cloud.busy.get(&drive.remote).copied();
+        let selected = current.map(|c| c == drive.mount_point).unwrap_or(false);
+        let icon = if mounted { ICON_CLOUD } else { ICON_CLOUD_OFF };
+        let quota = app.cloud.quota.get(&drive.remote).filter(|_| mounted);
+        let hover = match (busy, mounted, quota) {
+            (Some(b), _, _) => b.to_string(),
+            (None, false, _) => "Not mounted — click to mount".to_string(),
+            (None, true, Some(q)) => format!(
+                "{}\n{} free of {}",
+                drive.mount_point.display(),
+                format_size(q.free),
+                format_size(q.total)
+            ),
+            (None, true, None) => drive.mount_point.display().to_string(),
+        };
+        let r = nav_item(ui, icon, &drive.name, selected, busy.map(|_| "…")).on_hover_text(hover);
+        if let Some(q) = quota {
+            usage_bar(ui, r.rect, q.used_fraction());
+        }
+        if r.clicked() {
+            actions.push(Action::CloudOpen(drive.remote.clone()));
+        }
+        if mounted {
+            drop_target(ui, &r, &drive.mount_point, actions);
+        }
+        r.context_menu(|ui| {
+            if mounted {
+                if menu_item(ui, ICON_OPEN_IN_NEW, "Open in new tab", "").clicked() {
+                    actions.push(Action::OpenInNewTab(Location::Folder(
+                        drive.mount_point.clone(),
+                    )));
+                }
+                if menu_item(ui, ICON_EJECT, "Unmount", "").clicked() {
+                    actions.push(Action::CloudUnmount(drive.remote.clone()));
+                }
+            } else if menu_item(ui, ICON_CLOUD_SYNC, "Mount", "").clicked() {
+                actions.push(Action::CloudMount(drive.remote.clone()));
+            }
+            if menu_item(ui, ICON_PUBLIC, "Open drive.google.com", "").clicked() {
+                actions.push(Action::OpenUrl(crate::fs::cloud::DRIVE_WEB_URL.into()));
+            }
+            ui.separator();
+            if menu_item(ui, ICON_CLOUD_OFF, "Disconnect…", "").clicked() {
+                actions.push(Action::CloudDisconnect(drive.remote.clone()));
+            }
+        });
+    }
 }

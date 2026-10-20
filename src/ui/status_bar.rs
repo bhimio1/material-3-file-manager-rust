@@ -36,7 +36,14 @@ pub fn show(ui: &mut Ui, app: &mut App) {
         }
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if let Some(drive) = tab.folder().and_then(|f| places::drive_for(&app.drives, f)) {
+            let cloud = tab.folder().and_then(|f| app.config.cloud_drive_for(f));
+            if let Some(d) = cloud {
+                if let Some(q) = app.cloud.quota.get(&d.remote) {
+                    ui.label(small(format!("{} free on {}", format_size(q.free), d.name)));
+                }
+                widgets::icon(ui, ICON_CLOUD, 14.0, p.on_surface_variant);
+            } else if let Some(drive) = tab.folder().and_then(|f| places::drive_for(&app.drives, f))
+            {
                 ui.label(small(format!("{} free", format_size(drive.available))));
                 widgets::icon(ui, drive.icon(), 14.0, p.on_surface_variant);
             }

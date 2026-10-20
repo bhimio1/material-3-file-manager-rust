@@ -129,6 +129,9 @@ pub struct Config {
     pub file_categories: BTreeMap<String, Vec<String>>,
     #[serde(default)]
     pub use_dms: bool,
+    /// Cloud drives mounted through rclone.
+    #[serde(default)]
+    pub cloud_drives: Vec<crate::fs::cloud::CloudDrive>,
 }
 
 fn default_commands() -> HashMap<String, String> {
@@ -206,6 +209,7 @@ impl Default for Config {
             group_files_by_type: false,
             file_categories: default_file_categories(),
             use_dms: false,
+            cloud_drives: Vec::new(),
         }
     }
 }
@@ -223,6 +227,11 @@ impl Config {
                     .any(|e| e.trim_start_matches('.').eq_ignore_ascii_case(&ext))
             })
             .map(|(name, _)| name.as_str())
+    }
+
+    /// The cloud drive whose mount contains `path`, if any.
+    pub fn cloud_drive_for(&self, path: &Path) -> Option<&crate::fs::cloud::CloudDrive> {
+        self.cloud_drives.iter().find(|d| d.contains(path))
     }
 
     pub fn command(&self, key: &str) -> Option<&str> {

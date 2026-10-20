@@ -45,6 +45,14 @@ A fast, keyboard-friendly Linux file manager built with [egui](https://github.co
 - A dashboard with storage, pinned and recent folders
 - `m3fm --portal` serves `org.freedesktop.impl.portal.FileChooser`, so other apps' Open and Save dialogs use this file manager. Multiple selection, folder mode, filters, current folder and overwrite confirmation are supported.
 
+**Google Drive**
+- Connect from the sidebar, the dashboard or Settings → Cloud storage. You sign in with Google in your browser, and Drive is then mounted at `~/GoogleDrive` and shown under **Cloud** in the sidebar, with your storage quota.
+- Everything else works there too: browsing, search, copy/move, drag and drop, rename, and Open with.
+- Deleting a file on Drive moves it to Google Drive's own trash.
+- Grid thumbnails and file-content search are turned off on Drive, so browsing doesn't download your files.
+- Mount and unmount from the sidebar's right-click menu. Drive can mount automatically at startup, and you can choose another mount folder or connect more accounts. If rclone already has a signed-in Drive remote, it is reused instead of signing in again.
+- Requires [rclone](https://rclone.org/install/) and FUSE 3 (`fusermount3`). The mount is an `rclone mount --vfs-cache-mode full` that keeps running after the app closes, until you unmount or log out.
+
 ## Building
 
 ```sh
@@ -74,7 +82,9 @@ src/
   tab.rs        per-tab state: history, listing, search, selection
   config.rs     config.toml model
   thumbs.rs     background thumbnail/icon loading
-  fs/           listing & search, file jobs, watcher, apps, places, portal
+  cloud.rs      Google Drive connect/mount state (rclone)
+  fs/           listing & search, file jobs, watcher, apps, places, portal,
+                rclone wrapper (cloud.rs)
   theme/        M3 palette (seed / matugen) → egui style
   ui/           sidebar, tabs, toolbar, file view, details, dashboard,
                 settings, dialogs, toasts, M3 widgets

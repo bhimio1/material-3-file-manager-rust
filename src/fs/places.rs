@@ -44,6 +44,9 @@ pub fn display_name(path: &Path) -> String {
     if path == home() {
         return "Home".into();
     }
+    if let Some((_, name)) = cloud_root(path).filter(|(root, _)| root == path) {
+        return name;
+    }
     path.file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.to_string_lossy().into_owned())
@@ -60,7 +63,28 @@ pub fn tilde(path: &Path) -> String {
 }
 
 /// Icon for a folder, using the special-folder icon when it is one.
+/// Mount points of connected cloud drives with their display names, kept in
+/// sync with the config so naming helpers don't need it passed around.
+static CLOUD_MOUNTS: std::sync::RwLock<Vec<(PathBuf, String)>> = std::sync::RwLock::new(Vec::new());
+
+pub fn set_cloud_mounts(mounts: Vec<(PathBuf, String)>) {
+    *CLOUD_MOUNTS.write().unwrap() = mounts;
+}
+
+/// The cloud drive mount containing `path`: (mount point, name).
+pub fn cloud_root(path: &Path) -> Option<(PathBuf, String)> {
+    CLOUD_MOUNTS
+        .read()
+        .unwrap()
+        .iter()
+        .find(|(root, _)| path.starts_with(root))
+        .cloned()
+}
+
 pub fn folder_icon(path: &Path) -> MaterialIcon {
+    if cloud_root(path).is_some_and(|(root, _)| root == path) {
+        return ICON_CLOUD;
+    }
     // Called for every folder tile each frame; resolving XDG dirs re-reads
     // user-dirs.dirs, so do it once.
     static PLACES: std::sync::OnceLock<Vec<Place>> = std::sync::OnceLock::new();
@@ -139,7 +163,10 @@ pub fn drives() -> Vec<Drive> {
             continue;
         }
         let fs = disk.file_system().to_string_lossy().into_owned();
-        if matches!(fs.as_str(), "squashfs" | "overlay" | "tmpfs" | "devtmpfs") {
+        // rclone mounts are listed under Cloud instead.
+        if matches!(fs.as_str(), "squashfs" | "overlay" | "tmpfs" | "devtmpfs")
+            || fs.starts_with("fuse.rclone")
+        {
             continue;
         }
         let label = mount

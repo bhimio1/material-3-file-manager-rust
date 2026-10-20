@@ -88,7 +88,7 @@ pub fn show(ui: &mut Ui, app: &mut App) {
     let effective_source = app.effective_theme_source();
     egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
         Frame::new().inner_margin(Margin::symmetric(32, 24)).show(ui, |ui| {
-            ui.set_max_width(860.0);
+            ui.set_max_width(ui.available_width().min(860.0));
             ui.horizontal(|ui| {
                 widgets::icon(ui, ICON_SETTINGS, 30.0, p.primary);
                 ui.label(RichText::new("Settings").size(28.0).color(p.on_surface));
@@ -136,6 +136,85 @@ pub fn show(ui: &mut Ui, app: &mut App) {
                 row(ui, "Open files with DMS", "Use `dms open` (DankMaterialShell) to open files, falling back to the default app.", |ui| {
                     changed |= switch(ui, &mut config.use_dms).changed();
                 });
+            });
+
+            card(ui, "Cloud storage", |ui| {
+                let cloud = &app.cloud;
+                match &cloud.rclone {
+                    None => row(ui, "rclone", "Checking whether rclone is installed…", |ui| {
+                        ui.add(egui::Spinner::new().color(p.primary));
+                    }),
+                    Some(None) => row(
+                        ui,
+                        "rclone is required",
+                        "Google Drive is mounted with rclone. Install it (and FUSE 3) from your package manager, then check again.",
+                        |ui| {
+                            if widgets::button(ui, ButtonKind::Tonal, Some(ICON_REFRESH), "Check again").clicked() {
+                                actions.push(Action::CloudCheckRclone);
+                            }
+                            if widgets::button(ui, ButtonKind::Text, Some(ICON_OPEN_IN_NEW), "Install guide").clicked() {
+                                actions.push(Action::OpenUrl(crate::fs::cloud::INSTALL_URL.into()));
+                            }
+                        },
+                    ),
+                    Some(Some(version)) => {
+                        let mut mount_changed = false;
+                        for drive in config.cloud_drives.iter_mut() {
+                            let mounted = cloud.mounted.contains(&drive.remote);
+                            let busy = cloud.busy.get(&drive.remote).copied();
+                            let status = match (busy, mounted) {
+                                (Some(b), _) => b.to_string(),
+                                (None, true) => match cloud.quota.get(&drive.remote) {
+                                    Some(q) => format!(
+                                        "Mounted at {} · {} free of {}",
+                                        crate::fs::places::tilde(&drive.mount_point),
+                                        crate::fs::entry::format_size(q.free),
+                                        crate::fs::entry::format_size(q.total)
+                                    ),
+                                    None => format!("Mounted at {}", crate::fs::places::tilde(&drive.mount_point)),
+                                },
+                                (None, false) => "Not mounted".to_string(),
+                            };
+                            row(ui, &format!("{} ({}:)", drive.name, drive.remote), &status, |ui| {
+                                if widgets::button(ui, ButtonKind::Text, None, "Disconnect").clicked() {
+                                    actions.push(Action::CloudDisconnect(drive.remote.clone()));
+                                }
+                                let (label, action) = if mounted {
+                                    ("Unmount", Action::CloudUnmount(drive.remote.clone()))
+                                } else {
+                                    ("Mount", Action::CloudMount(drive.remote.clone()))
+                                };
+                                if widgets::button_enabled(ui, ButtonKind::Tonal, None, label, busy.is_none()).clicked() {
+                                    actions.push(action);
+                                }
+                            });
+                            row(ui, "Mount when the app starts", "Keeps working after the app closes, until you unmount or log out.", |ui| {
+                                changed |= switch(ui, &mut drive.auto_mount).changed();
+                            });
+                            row(ui, "Mount folder", "Must be empty. Unmount to change it.", |ui| {
+                                let mut text = drive.mount_point.to_string_lossy().into_owned();
+                                let r = ui.add_enabled(!mounted, egui::TextEdit::singleline(&mut text).desired_width(240.0));
+                                if r.changed() {
+                                    drive.mount_point = std::path::PathBuf::from(text.trim());
+                                }
+                                mount_changed |= r.lost_focus();
+                            });
+                            ui.separator();
+                        }
+                        changed |= mount_changed;
+                        let connecting = cloud.connect.is_some() || cloud.preparing_connect;
+                        let (title, desc) = if config.cloud_drives.is_empty() {
+                            ("Google Drive", format!("Sign in with Google and browse your Drive like any folder (rclone {version})."))
+                        } else {
+                            ("Another Google account", "Connect an additional Drive.".to_string())
+                        };
+                        row(ui, title, &desc, |ui| {
+                            if widgets::button_enabled(ui, ButtonKind::Filled, Some(ICON_ADD_TO_DRIVE), "Connect", !connecting).clicked() {
+                                actions.push(Action::CloudConnect);
+                            }
+                        });
+                    }
+                }
             });
 
             card(ui, "Appearance", |ui| {

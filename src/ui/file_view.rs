@@ -745,7 +745,9 @@ fn paint_entry_visual(
     p: &M3Palette,
 ) {
     let px = rect.width() * ui.ctx().pixels_per_point();
-    if config.ui.show_thumbnails && entry.kind.has_thumbnail() && rect.width() >= 20.0 {
+    // No grid thumbnails on cloud drives: each one would download the file.
+    let cloud = config.cloud_drive_for(&entry.path).is_some();
+    if config.ui.show_thumbnails && !cloud && entry.kind.has_thumbnail() && rect.width() >= 20.0 {
         match thumbs.get(&entry.path, px, entry.modified) {
             Thumb::Ready(tex) => {
                 let size = tex.size_vec2();

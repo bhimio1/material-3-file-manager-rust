@@ -538,7 +538,8 @@ impl Tab {
         let query = self.search.query.trim().to_string();
         let options = SearchOptions {
             recursive: self.search.recursive,
-            content_search: self.search.content,
+            // Reading every file on a cloud drive would download all of it.
+            content_search: self.search.content && config.cloud_drive_for(&root).is_none(),
             include_hidden: config.ui.show_hidden,
         };
         let (tx, rx) = flume::unbounded();

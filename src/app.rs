@@ -62,6 +62,7 @@ pub struct App {
     pub actions: Actions,
     pub settings: ui::settings::SettingsState,
     frame_stats: crate::perf::FrameStats,
+    pub cloud: crate::cloud::CloudState,
 }
 
 pub const SHORTCUTS: &[(&str, &str)] = &[
@@ -185,9 +186,12 @@ impl App {
             actions: Vec::new(),
             settings: Default::default(),
             frame_stats: Default::default(),
+            cloud: Default::default(),
             ctx,
         };
         app.apply_theme();
+        app.sync_cloud_mounts();
+        app.cloud_init();
         app
     }
 
@@ -258,7 +262,19 @@ impl App {
 
     // ----------------------------------------------------------------- config
 
+    /// Tell the naming helpers where cloud drives are mounted.
+    pub fn sync_cloud_mounts(&self) {
+        places::set_cloud_mounts(
+            self.config
+                .cloud_drives
+                .iter()
+                .map(|d| (d.mount_point.clone(), d.name.clone()))
+                .collect(),
+        );
+    }
+
     pub fn save_config(&mut self) {
+        self.sync_cloud_mounts();
         match self.config.save() {
             Ok(contents) => self.last_saved_config = contents,
             Err(e) => self.toast(format!("Couldn't save settings: {e}"), ToastKind::Error),
@@ -288,6 +304,7 @@ impl App {
                     match toml::from_str::<Config>(&contents) {
                         Ok(cfg) => {
                             self.config = cfg;
+                            self.sync_cloud_mounts();
                             self.last_saved_config = contents;
                             self.apply_theme();
                             for tab in &mut self.tabs {
@@ -362,6 +379,7 @@ impl App {
         }
 
         self.poll_jobs();
+        self.poll_cloud();
         self.poll_config_files();
         self.thumbs.poll();
 
@@ -449,7 +467,12 @@ impl App {
                 t.action = Some(("Undo".into(), Action::UndoTrash(outcome.created.clone())));
                 self.toasts.push(t);
             } else {
-                self.toast(format!("{} {n} {noun}", kind.past()), ToastKind::Success);
+                let text = if kind == JobKind::CloudTrash {
+                    format!("Moved {n} {noun} to Google Drive's trash")
+                } else {
+                    format!("{} {n} {noun}", kind.past())
+                };
+                self.toast(text, ToastKind::Success);
             }
         }
         if !self.jobs.is_empty() {
@@ -616,8 +639,17 @@ impl App {
             Action::Cut(paths) => self.set_clipboard(ClipOp::Cut, paths),
             Action::Paste(dir) => self.paste_into(dir, None),
             Action::Trash(paths) => {
-                if !paths.is_empty() {
-                    let job = ops::remove(paths, false, self.notify());
+                // Files on a cloud mount can't go to the local trash; deleting
+                // them makes the provider keep them in its own trash instead.
+                let (cloud, local): (Vec<PathBuf>, Vec<PathBuf>) = paths
+                    .into_iter()
+                    .partition(|p| self.config.cloud_drive_for(p).is_some());
+                if !local.is_empty() {
+                    let job = ops::remove(local, JobKind::Trash, self.notify());
+                    self.jobs.push(job);
+                }
+                if !cloud.is_empty() {
+                    let job = ops::remove(cloud, JobKind::CloudTrash, self.notify());
                     self.jobs.push(job);
                 }
             }
@@ -736,6 +768,29 @@ impl App {
                 self.toast("Theme reloaded", ToastKind::Info);
             }
             Action::ShowShortcuts => self.dialog = Some(Dialog::Shortcuts),
+            Action::CloudConnect => {
+                self.cloud_connect();
+                if !self.cloud.rclone_missing() {
+                    self.dialog = Some(Dialog::CloudConnect);
+                }
+            }
+            Action::CloudCancelConnect => self.cloud_cancel_connect(),
+            Action::CloudCheckRclone => {
+                self.cloud.rclone = None;
+                self.cloud_init();
+            }
+            Action::CloudOpen(remote) => self.cloud_open(&remote),
+            Action::CloudMount(remote) => self.cloud_mount(&remote, false),
+            Action::CloudUnmount(remote) => self.cloud_unmount(&remote),
+            Action::CloudDisconnect(remote) => {
+                self.dialog = Some(Dialog::ConfirmDisconnect { remote })
+            }
+            Action::CloudDisconnectConfirmed(remote) => self.cloud_disconnect(&remote),
+            Action::OpenUrl(url) => {
+                if let Err(e) = open::that_detached(&url) {
+                    self.toast(format!("Couldn't open the browser: {e}"), ToastKind::Error);
+                }
+            }
             Action::SelectAll => self.tab_mut().select_all(),
             Action::Toast(text, kind) => self.toast(text, kind),
             Action::ToggleDetails => {

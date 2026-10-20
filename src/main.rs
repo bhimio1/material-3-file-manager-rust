@@ -1,6 +1,7 @@
 //! Material 3 File Manager — an egui file manager themed with Material You.
 
 mod app;
+mod cloud;
 mod config;
 mod fs;
 mod perf;

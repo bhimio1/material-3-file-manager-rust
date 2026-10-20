@@ -2,6 +2,7 @@
 //! with the desktop (applications, drives, portal, change watching).
 
 pub mod apps;
+pub mod cloud;
 pub mod entry;
 pub mod launch;
 pub mod ops;

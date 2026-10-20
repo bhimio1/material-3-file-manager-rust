@@ -12,6 +12,8 @@ pub enum JobKind {
     Move,
     Trash,
     Delete,
+    /// Delete on a cloud mount; the provider keeps it in its own trash.
+    CloudTrash,
 }
 
 impl JobKind {
@@ -21,6 +23,7 @@ impl JobKind {
             JobKind::Move => "Moving",
             JobKind::Trash => "Moving to trash",
             JobKind::Delete => "Deleting",
+            JobKind::CloudTrash => "Moving to Drive trash",
         }
     }
     pub fn past(self) -> &'static str {
@@ -29,6 +32,7 @@ impl JobKind {
             JobKind::Move => "Moved",
             JobKind::Trash => "Moved to trash",
             JobKind::Delete => "Deleted",
+            JobKind::CloudTrash => "Moved to Google Drive's trash",
         }
     }
 }
@@ -325,13 +329,14 @@ pub fn transfer(sources: Vec<PathBuf>, dest_dir: PathBuf, kind: JobKind, notify:
     })
 }
 
-/// Move to the freedesktop trash, or delete permanently.
-pub fn remove(paths: Vec<PathBuf>, permanently: bool, notify: Notify) -> Job {
-    let kind = if permanently {
-        JobKind::Delete
-    } else {
-        JobKind::Trash
-    };
+/// Move to the freedesktop trash (`Trash`), or unlink (`Delete`, and
+/// `CloudTrash` where the cloud provider keeps deleted files).
+pub fn remove(paths: Vec<PathBuf>, kind: JobKind, notify: Notify) -> Job {
+    debug_assert!(matches!(
+        kind,
+        JobKind::Trash | JobKind::Delete | JobKind::CloudTrash
+    ));
+    let permanently = kind != JobKind::Trash;
     let label = format!("{} {}", kind.verb(), describe(&paths));
     let affected = paths
         .iter()
@@ -519,7 +524,10 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let d = tmp.path().join("gone");
         std::fs::create_dir_all(d.join("x")).unwrap();
-        let out = remove(vec![d.clone()], true, noop()).done.recv().unwrap();
+        let out = remove(vec![d.clone()], JobKind::Delete, noop())
+            .done
+            .recv()
+            .unwrap();
         assert_eq!(out.succeeded, 1);
         assert!(!d.exists());
     }

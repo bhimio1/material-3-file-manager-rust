@@ -86,6 +86,20 @@ pub enum Action {
     ToggleDetails,
     FocusSearch,
     EditPath,
+
+    /// Start the Google Drive sign-in (or reuse an rclone remote).
+    CloudConnect,
+    /// Re-run rclone detection (after installing it).
+    CloudCheckRclone,
+    CloudCancelConnect,
+    /// Navigate into a cloud drive, mounting it first if needed.
+    CloudOpen(String),
+    CloudMount(String),
+    CloudUnmount(String),
+    /// Asks for confirmation first.
+    CloudDisconnect(String),
+    CloudDisconnectConfirmed(String),
+    OpenUrl(String),
 }
 
 pub type Actions = Vec<Action>;

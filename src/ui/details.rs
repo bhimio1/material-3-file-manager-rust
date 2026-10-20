@@ -319,7 +319,18 @@ fn folder_summary(ui: &mut Ui, app: &mut App, actions: &mut Vec<Action>) {
         .sum();
     meta_row(ui, "Files size", &format_size(total));
     meta_row(ui, "Location", &places::tilde(&folder));
-    if let Some(drive) = places::drive_for(&app.drives, &folder) {
+    if let Some(d) = app.config.cloud_drive_for(&folder) {
+        if let Some(q) = app.cloud.quota.get(&d.remote) {
+            ui.add_space(10.0);
+            ui.label(
+                RichText::new(format!("{} — {} free", d.name, format_size(q.free)))
+                    .size(12.5)
+                    .color(p.on_surface_variant),
+            );
+            ui.add_space(4.0);
+            widgets::linear_progress(ui, Some(q.used_fraction()), ui.available_width());
+        }
+    } else if let Some(drive) = places::drive_for(&app.drives, &folder) {
         ui.add_space(10.0);
         ui.label(
             RichText::new(format!(
