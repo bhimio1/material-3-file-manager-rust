@@ -1,0 +1,85 @@
+# Material 3 File Manager
+
+A fast, keyboard-friendly Linux file manager built with [egui](https://github.com/emilk/egui) and themed with Material You. The palette comes from a seed color or from your wallpaper via [matugen](https://github.com/InioX/matugen).
+
+![Dark theme, grid view](docs/screenshot-dark.png)
+![Light theme, list view](docs/screenshot-light.png)
+
+## Features
+
+**Browsing**
+- Tabs (Ctrl+T / Ctrl+W, middle-click to close, drop files on a tab to move them there)
+- Back/forward/up history. Going back re-selects the folder you came from.
+- Breadcrumb path bar. Long paths collapse into a `…` menu. Click it or press Ctrl+L to type a path, with Tab completion and `~` expansion.
+- Grid and list views. Sortable columns, natural sorting (`file2` before `file10`), optional "folders first".
+- Group by type, with collapsible sections. The categories are editable in Settings.
+- Image thumbnails, decoded in the background and cached on disk for large images. EXIF orientation is respected.
+- Details pane (F9) with a large preview, metadata, image dimensions and a text preview.
+- Grid size adjustable with Ctrl+scroll or Ctrl+= / Ctrl+-.
+- Folders refresh live when their contents change.
+
+**Search**
+- Typing in the search box filters the current folder instantly.
+- "Include subfolders" and "Search file contents" chips. Results stream in while the search runs, with a relative path shown for each result.
+
+**Selection and keyboard**
+- Click, Ctrl+click, Shift+click, rubber-band drag, Ctrl+A
+- Arrow keys, Home/End and PageUp/PageDown. Shift extends the selection.
+- Type a name to jump to it.
+- F1 shows every shortcut.
+
+**File operations**
+- Copy, cut and paste (Ctrl+C/X/V). Paths also go to the system clipboard. Pasting paths or `file://` URIs copied from other apps works too.
+- Drag and drop onto folders, tabs, breadcrumb segments and sidebar entries. Hold Ctrl to copy. Files dropped in from other apps are copied in.
+- Move to… and Copy to… with a folder picker
+- Move to trash with **Undo**, or delete permanently after a confirmation
+- Inline rename (F2). The name is pre-selected without its extension, and invalid names or clashes are reported inline.
+- New folder and new empty file
+- Long operations run in the background, with a progress bar and a cancel button in the status bar. Name clashes become `name (copy).ext` instead of overwriting anything.
+
+**Desktop integration**
+- Open with the default app, or with a searchable "Open with" dialog. Apps that handle the file's type are listed first, and app icons come from your icon theme. Commands run without a shell.
+- Open in terminal: your configured terminal, then common fallbacks. Open in editor.
+- Optional `dms open` (DankMaterialShell) support
+- Places (XDG user dirs), pinned folders and drives with usage bars in the sidebar
+- A dashboard with storage, pinned and recent folders
+- `m3fm --portal` serves `org.freedesktop.impl.portal.FileChooser`, so other apps' Open and Save dialogs use this file manager. Multiple selection, folder mode, filters, current folder and overwrite confirmation are supported.
+
+## Building
+
+```sh
+cargo build --release
+./target/release/m3fm [FOLDER]
+```
+
+Runtime requirements on Linux: an OpenGL driver, `libxkbcommon` (plus `libxkbcommon-x11` on X11) and, for Wayland, `libwayland-client`. These are present on any normal desktop.
+
+## Configuration
+
+Settings are edited in the app (Ctrl+,) and stored in `~/.config/m3fm/config.toml`. The file is watched: edits made by hand apply immediately. Config files from the earlier gpui build load unchanged.
+
+### Theming with matugen
+
+1. In Settings → Matugen, click **Export template**.
+2. Add the snippet shown there to `~/.config/matugen/config.toml`.
+3. Run matugen. The app picks up `~/.config/material_3_file_manager/theme.json` live.
+
+With the color source on **Auto**, `theme.json` is used whenever it exists. Otherwise the palette is generated from the seed color, in light, dark or system mode.
+
+## Project layout
+
+```
+src/
+  app.rs        app state, layout, shortcuts, action dispatch
+  tab.rs        per-tab state: history, listing, search, selection
+  config.rs     config.toml model
+  thumbs.rs     background thumbnail/icon loading
+  fs/           listing & search, file jobs, watcher, apps, places, portal
+  theme/        M3 palette (seed / matugen) → egui style
+  ui/           sidebar, tabs, toolbar, file view, details, dashboard,
+                settings, dialogs, toasts, M3 widgets
+```
+
+Run the tests with `cargo test`.
+
+Fonts: Inter (SIL OFL 1.1, see `assets/fonts/LICENSE-Inter.txt`). Icons: Material Symbols, via `egui_material_icons`.
