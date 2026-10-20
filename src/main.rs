@@ -3,6 +3,7 @@
 mod app;
 mod config;
 mod fs;
+mod perf;
 mod tab;
 mod theme;
 mod thumbs;

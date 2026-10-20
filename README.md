@@ -80,6 +80,6 @@ src/
                 settings, dialogs, toasts, M3 widgets
 ```
 
-Run the tests with `cargo test`.
+Run the tests with `cargo test`. Set `M3FM_PERF=1` to print per-second frame timings, the top repaint causes, and the cost of directory listings to stderr.
 
 Fonts: Inter (SIL OFL 1.1, see `assets/fonts/LICENSE-Inter.txt`). Icons: Material Symbols, via `egui_material_icons`.

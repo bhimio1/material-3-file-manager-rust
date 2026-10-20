@@ -61,8 +61,12 @@ pub fn tilde(path: &Path) -> String {
 
 /// Icon for a folder, using the special-folder icon when it is one.
 pub fn folder_icon(path: &Path) -> MaterialIcon {
-    standard_places()
-        .into_iter()
+    // Called for every folder tile each frame; resolving XDG dirs re-reads
+    // user-dirs.dirs, so do it once.
+    static PLACES: std::sync::OnceLock<Vec<Place>> = std::sync::OnceLock::new();
+    PLACES
+        .get_or_init(standard_places)
+        .iter()
         .find(|p| p.path == path)
         .map(|p| p.icon)
         .unwrap_or(ICON_FOLDER)

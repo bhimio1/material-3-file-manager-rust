@@ -7,7 +7,7 @@ use crate::fs::watcher::DirWatcher;
 use crate::fs::FileEntry;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use fuzzy_matcher::FuzzyMatcher;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -105,7 +105,14 @@ pub struct Tab {
     reload_due: Option<Instant>,
 
     pub search: SearchState,
-    pub selection: HashSet<PathBuf>,
+    /// Selected paths. Private so every change also refreshes
+    /// `selected_idx`; read it through `selection()` / `is_selected()`.
+    selection: HashSet<PathBuf>,
+    /// Indices of the selection in `view`, sorted. Lets per-frame readers
+    /// (status bar, details pane) avoid scanning the whole folder.
+    selected_idx: Vec<usize>,
+    /// Path → position in `view`.
+    view_index: HashMap<PathBuf, usize>,
     pub anchor: Option<PathBuf>,
     pub cursor: Option<PathBuf>,
     /// Scroll so this entry is visible on the next frame.
@@ -148,6 +155,8 @@ impl Tab {
                 ..Default::default()
             },
             selection: HashSet::new(),
+            selected_idx: Vec::new(),
+            view_index: HashMap::new(),
             anchor: None,
             cursor: None,
             scroll_to: None,
@@ -245,6 +254,7 @@ impl Tab {
         self.search.deep = None;
         self.search.changed_at = None;
         self.selection.clear();
+        self.selected_idx.clear();
         self.anchor = None;
         self.cursor = None;
         self.rename = None;
@@ -350,7 +360,7 @@ impl Tab {
                 .cloned()
                 .collect();
             if !wanted.is_empty() {
-                self.selection = wanted.iter().cloned().collect();
+                self.set_selection(wanted.iter().cloned().collect());
                 self.cursor = wanted.first().cloned();
                 self.anchor = self.cursor.clone();
                 self.scroll_to = self.cursor.clone();
@@ -418,21 +428,18 @@ impl Tab {
                 "Other" => 2,
                 _ => 1,
             };
-            let mut names: Vec<String> = Vec::new();
-            for e in &view {
-                let g = group_of(e);
-                if !names.contains(&g) {
-                    names.push(g);
+            // Bucket each entry once (the sort order inside a bucket is kept).
+            let mut buckets: Vec<(String, Vec<FileEntry>)> = Vec::new();
+            for e in view {
+                let g = group_of(&e);
+                match buckets.iter_mut().find(|(name, _)| *name == g) {
+                    Some((_, members)) => members.push(e),
+                    None => buckets.push((g, vec![e])),
                 }
             }
-            names.sort_by(|a, b| rank(a).cmp(&rank(b)).then_with(|| a.cmp(b)));
-            let mut grouped = Vec::with_capacity(view.len());
-            for name in names {
-                let members: Vec<FileEntry> = view
-                    .iter()
-                    .filter(|e| group_of(e) == name)
-                    .cloned()
-                    .collect();
+            buckets.sort_by(|(a, _), (b, _)| rank(a).cmp(&rank(b)).then_with(|| a.cmp(b)));
+            let mut grouped = Vec::new();
+            for (name, members) in buckets {
                 let collapsed = self.collapsed_groups.contains(&name);
                 let start = grouped.len();
                 let total = members.len();
@@ -450,6 +457,13 @@ impl Tab {
             view = grouped;
         }
         self.view = view;
+        self.view_index = self
+            .view
+            .iter()
+            .enumerate()
+            .map(|(i, e)| (e.path.clone(), i))
+            .collect();
+        self.sync_selection();
     }
 
     pub fn toggle_group(&mut self, name: &str) {
@@ -555,12 +569,41 @@ impl Tab {
     // --------------------------------------------------------------- selection
 
     pub fn index_of(&self, path: &Path) -> Option<usize> {
-        self.view.iter().position(|e| e.path == path)
+        self.view_index.get(path).copied()
+    }
+
+    pub fn selection(&self) -> &HashSet<PathBuf> {
+        &self.selection
+    }
+
+    pub fn is_selected(&self, path: &Path) -> bool {
+        self.selection.contains(path)
+    }
+
+    pub fn selection_len(&self) -> usize {
+        self.selected_idx.len()
+    }
+
+    pub fn set_selection(&mut self, selection: HashSet<PathBuf>) {
+        self.selection = selection;
+        self.sync_selection();
+    }
+
+    /// Recompute `selected_idx` after the selection or the view changed.
+    fn sync_selection(&mut self) {
+        let mut idx: Vec<usize> = self
+            .selection
+            .iter()
+            .filter_map(|p| self.view_index.get(p).copied())
+            .collect();
+        idx.sort_unstable();
+        self.selected_idx = idx;
     }
 
     pub fn select_only(&mut self, path: &Path) {
         self.selection.clear();
         self.selection.insert(path.to_path_buf());
+        self.selected_idx = self.index_of(path).into_iter().collect();
         self.anchor = Some(path.to_path_buf());
         self.cursor = Some(path.to_path_buf());
     }
@@ -569,6 +612,7 @@ impl Tab {
         if !self.selection.remove(path) {
             self.selection.insert(path.to_path_buf());
         }
+        self.sync_selection();
         self.anchor = Some(path.to_path_buf());
         self.cursor = Some(path.to_path_buf());
     }
@@ -585,32 +629,29 @@ impl Tab {
             for e in &self.view[lo..=hi] {
                 self.selection.insert(e.path.clone());
             }
+            self.sync_selection();
         }
         self.cursor = Some(path.to_path_buf());
     }
 
     pub fn select_all(&mut self) {
         self.selection = self.view.iter().map(|e| e.path.clone()).collect();
+        self.selected_idx = (0..self.view.len()).collect();
     }
 
     pub fn clear_selection(&mut self) {
         self.selection.clear();
+        self.selected_idx.clear();
         self.anchor = None;
     }
 
     /// Selected entries in view order.
-    pub fn selected_entries(&self) -> Vec<&FileEntry> {
-        self.view
-            .iter()
-            .filter(|e| self.selection.contains(&e.path))
-            .collect()
+    pub fn selected_entries(&self) -> impl Iterator<Item = &FileEntry> + '_ {
+        self.selected_idx.iter().map(|&i| &self.view[i])
     }
 
     pub fn selected_paths(&self) -> Vec<PathBuf> {
-        self.selected_entries()
-            .into_iter()
-            .map(|e| e.path.clone())
-            .collect()
+        self.selected_entries().map(|e| e.path.clone()).collect()
     }
 
     /// Keyboard navigation: move the cursor by `delta` entries.

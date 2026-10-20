@@ -41,6 +41,9 @@ pub struct Picker {
     name: String,
     confirm_overwrite: bool,
     show_hidden: bool,
+    /// Listing in progress on a background thread (dir, result).
+    loading: Option<flume::Receiver<(PathBuf, std::io::Result<Vec<FileEntry>>)>>,
+    ctx: egui::Context,
 }
 
 impl Drop for Picker {
@@ -134,7 +137,12 @@ impl Dialog {
         }))
     }
 
-    pub fn picker(spec: PickerSpec, purpose: PickerPurpose, start: PathBuf) -> Self {
+    pub fn picker(
+        spec: PickerSpec,
+        purpose: PickerPurpose,
+        start: PathBuf,
+        ctx: &egui::Context,
+    ) -> Self {
         let name = match &spec.kind {
             PickKind::Save { current_name } => current_name.clone(),
             _ => String::new(),
@@ -150,6 +158,8 @@ impl Dialog {
             name,
             confirm_overwrite: false,
             show_hidden: false,
+            loading: None,
+            ctx: ctx.clone(),
         };
         picker.enter(start);
         Dialog::Picker(Box::new(picker))
@@ -160,6 +170,7 @@ impl Dialog {
         accept: &str,
         purpose: PickerPurpose,
         start: PathBuf,
+        ctx: &egui::Context,
     ) -> Self {
         Self::picker(
             PickerSpec {
@@ -171,6 +182,7 @@ impl Dialog {
             },
             purpose,
             start,
+            ctx,
         )
     }
 
@@ -894,27 +906,48 @@ impl Picker {
         )
     }
 
+    /// List `dir` on a background thread; `poll` picks the result up.
     fn enter(&mut self, dir: PathBuf) {
         self.selection.clear();
         self.confirm_overwrite = false;
-        match scanner::list_dir(&dir) {
-            Ok(mut entries) => {
-                entries.retain(|e| {
-                    (self.show_hidden || !e.hidden) && (e.is_dir || self.wants_files())
-                });
-                if let Some(filter) = self.spec.filters.get(self.filter) {
-                    entries.retain(|e| e.is_dir || filter.matches(&e.name));
+        self.entries.clear();
+        self.error = None;
+        self.dir = dir.clone();
+        let (tx, rx) = flume::bounded(1);
+        let show_hidden = self.show_hidden;
+        let wants_files = self.wants_files();
+        let filter = self.spec.filters.get(self.filter).cloned();
+        let ctx = self.ctx.clone();
+        std::thread::spawn(move || {
+            let result = crate::perf::time("picker list_dir", || scanner::list_dir(&dir)).map(
+                |mut entries| {
+                    entries.retain(|e| {
+                        (show_hidden || !e.hidden)
+                            && (e.is_dir
+                                || (wants_files
+                                    && filter.as_ref().is_none_or(|f| f.matches(&e.name))))
+                    });
+                    sort_entries(&mut entries, SortKey::Name, true, true);
+                    entries
+                },
+            );
+            let _ = tx.send((dir, result));
+            ctx.request_repaint();
+        });
+        self.loading = Some(rx);
+    }
+
+    fn poll(&mut self) {
+        let Some(rx) = &self.loading else { return };
+        if let Ok((dir, result)) = rx.try_recv() {
+            self.loading = None;
+            if dir == self.dir {
+                match result {
+                    Ok(entries) => self.entries = entries,
+                    Err(e) => self.error = Some(e.to_string()),
                 }
-                sort_entries(&mut entries, SortKey::Name, true, true);
-                self.entries = entries;
-                self.error = None;
-            }
-            Err(e) => {
-                self.entries.clear();
-                self.error = Some(e.to_string());
             }
         }
-        self.dir = dir;
     }
 
     fn refresh(&mut self) {
@@ -924,6 +957,7 @@ impl Picker {
 }
 
 fn picker_ui(ui: &mut Ui, app: &mut App, picker: &mut Picker, keep: &mut bool) {
+    picker.poll();
     let p = app.palette.clone();
     ui.label(
         RichText::new(if picker.spec.title.is_empty() {
@@ -1048,7 +1082,12 @@ fn picker_ui(ui: &mut Ui, app: &mut App, picker: &mut Picker, keep: &mut bool) {
                     if let Some(err) = &picker.error {
                         ui.label(RichText::new(err).color(p.error));
                     }
-                    if picker.entries.is_empty() && picker.error.is_none() {
+                    if picker.loading.is_some() && picker.entries.is_empty() {
+                        ui.add_space(30.0);
+                        ui.vertical_centered(|ui| {
+                            ui.add(egui::Spinner::new().size(24.0).color(p.primary));
+                        });
+                    } else if picker.entries.is_empty() && picker.error.is_none() {
                         ui.add_space(30.0);
                         ui.vertical_centered(|ui| {
                             ui.label(RichText::new("Empty folder").color(p.on_surface_variant))

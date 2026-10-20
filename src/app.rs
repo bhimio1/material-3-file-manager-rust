@@ -61,6 +61,7 @@ pub struct App {
     config_events: flume::Receiver<PathBuf>,
     pub actions: Actions,
     pub settings: ui::settings::SettingsState,
+    frame_stats: crate::perf::FrameStats,
 }
 
 pub const SHORTCUTS: &[(&str, &str)] = &[
@@ -183,6 +184,7 @@ impl App {
             config_events: cfg_rx,
             actions: Vec::new(),
             settings: Default::default(),
+            frame_stats: Default::default(),
             ctx,
         };
         app.apply_theme();
@@ -379,6 +381,7 @@ impl App {
                     req.spec,
                     PickerPurpose::Portal(Some(req.respond)),
                     start,
+                    &self.ctx,
                 ));
             }
         }
@@ -656,6 +659,7 @@ impl App {
                     "Move here",
                     PickerPurpose::MoveTo(paths),
                     start,
+                    &self.ctx,
                 ));
             }
             Action::CopyTo(paths) => {
@@ -665,6 +669,7 @@ impl App {
                     "Copy here",
                     PickerPurpose::CopyTo(paths),
                     start,
+                    &self.ctx,
                 ));
             }
             Action::Drop {
@@ -708,6 +713,7 @@ impl App {
                     "Pin",
                     PickerPurpose::Pin,
                     places::home(),
+                    &self.ctx,
                 ));
             }
             Action::ClearRecent => {
@@ -758,7 +764,20 @@ impl App {
         let renaming = self.tab().rename.is_some();
         let mut actions: Actions = Vec::new();
         let folder = self.current_folder();
-        let selected = self.tab().selected_paths();
+        // Most frames have no key input; don't copy the selection for those.
+        let has_keys = self.ctx.input(|i| {
+            i.events.iter().any(|e| {
+                matches!(
+                    e,
+                    egui::Event::Key { pressed: true, .. } | egui::Event::Copy | egui::Event::Cut
+                )
+            })
+        });
+        let selected = if has_keys {
+            self.tab().selected_paths()
+        } else {
+            Vec::new()
+        };
         let ctrl = Modifiers::COMMAND;
         let ctrl_shift = Modifiers::COMMAND | Modifiers::SHIFT;
 
@@ -1077,7 +1096,8 @@ impl eframe::App for App {
         }
     }
 
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        let started = Instant::now();
         self.handle_shortcuts();
         self.layout(ui);
         dialogs::show(&self.ctx.clone(), self);
@@ -1087,6 +1107,11 @@ impl eframe::App for App {
             self.handle_os_drop();
         }
         self.process_actions();
+        self.frame_stats.record(
+            &self.ctx,
+            started.elapsed().as_secs_f32() * 1e3,
+            frame.info().cpu_usage.map(|s| s * 1e3),
+        );
     }
 
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {

@@ -18,10 +18,14 @@ pub fn show(ui: &mut Ui, app: &mut App) {
         let small = |s: String| RichText::new(s).size(12.5).color(p.on_surface_variant);
         let n = tab.view.len();
         let mut text = format!("{n} item{}", if n == 1 { "" } else { "s" });
-        let sel = tab.selected_entries();
-        if !sel.is_empty() {
-            let bytes: u64 = sel.iter().filter(|e| !e.is_dir).map(|e| e.size).sum();
-            text.push_str(&format!(" · {} selected", sel.len()));
+        let selected = tab.selection_len();
+        if selected > 0 {
+            let bytes: u64 = tab
+                .selected_entries()
+                .filter(|e| !e.is_dir)
+                .map(|e| e.size)
+                .sum();
+            text.push_str(&format!(" · {selected} selected"));
             if bytes > 0 {
                 text.push_str(&format!(" ({})", format_size(bytes)));
             }

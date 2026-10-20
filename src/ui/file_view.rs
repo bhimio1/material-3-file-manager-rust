@@ -535,7 +535,7 @@ fn item(
     let entry = tab.view[idx].clone();
     let id = Id::unique(("entry", &entry.path));
     let resp = ui.interact(rect, id, Sense::CLICK | Sense::DRAG);
-    let selected = tab.selection.contains(&entry.path);
+    let selected = tab.is_selected(&entry.path);
     let renaming = tab
         .rename
         .as_ref()
@@ -571,7 +571,7 @@ fn item(
         tab.select_only(&entry.path);
     }
     if resp.drag_started() && !renaming {
-        if !tab.selection.contains(&entry.path) {
+        if !tab.is_selected(&entry.path) {
             tab.select_only(&entry.path);
         }
         egui::DragAndDrop::set_payload(ui.ctx(), DragPaths(tab.selected_paths()));
@@ -591,7 +591,7 @@ fn item(
             }
         }
     }
-    let selected = tab.selection.contains(&entry.path);
+    let selected = tab.is_selected(&entry.path);
 
     // ---- painting
     if ui.is_rect_visible(rect) {
@@ -615,7 +615,7 @@ fn item(
                 StrokeKind::Inside,
             );
         }
-        if tab.cursor.as_ref() == Some(&entry.path) && selected && tab.selection.len() > 1 {
+        if tab.cursor.as_ref() == Some(&entry.path) && selected && tab.selection_len() > 1 {
             ui.painter().rect_stroke(
                 rect,
                 radius,
@@ -685,12 +685,16 @@ fn item(
         }
     });
 
-    let targets: Vec<PathBuf> = if tab.selection.contains(&entry.path) {
-        tab.selected_paths()
-    } else {
-        vec![entry.path.clone()]
-    };
-    resp.context_menu(|ui| item_menu(ui, &entry, &targets, has_clipboard, config, actions));
+    // Targets are only gathered while the menu is open: with a large
+    // selection, collecting them for every visible tile each frame is costly.
+    resp.context_menu(|ui| {
+        let targets: Vec<PathBuf> = if tab.is_selected(&entry.path) {
+            tab.selected_paths()
+        } else {
+            vec![entry.path.clone()]
+        };
+        item_menu(ui, &entry, &targets, has_clipboard, config, actions)
+    });
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -977,7 +981,7 @@ fn rubber_band(
         if let Some(pos) = bg.interact_pointer_pos() {
             let additive = ui.input(|i| i.modifiers.command || i.modifiers.shift);
             let base = if additive {
-                tab.selection.clone()
+                tab.selection().clone()
             } else {
                 HashSet::new()
             };
@@ -1020,7 +1024,7 @@ fn rubber_band(
             }
         }
     }
-    tab.selection = selection;
+    tab.set_selection(selection);
 
     let screen = sel.translate(origin.to_vec2());
     ui.painter().rect_filled(

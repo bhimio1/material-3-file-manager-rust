@@ -57,12 +57,33 @@ pub fn show(ui: &mut Ui, app: &mut App) {
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
                     let tab = app.tab();
-                    let selected: Vec<FileEntry> =
-                        tab.selected_entries().into_iter().cloned().collect();
-                    match selected.as_slice() {
-                        [] => folder_summary(ui, app, &mut actions),
-                        [one] => single(ui, app, one, &mut actions),
-                        many => multiple(ui, app, many),
+                    // Only clone what's displayed: the selection can be
+                    // an entire 20k-file folder.
+                    match tab.selection_len() {
+                        0 => folder_summary(ui, app, &mut actions),
+                        1 => {
+                            let one = tab.selected_entries().next().cloned();
+                            if let Some(one) = one {
+                                single(ui, app, &one, &mut actions);
+                            }
+                        }
+                        n => {
+                            let preview: Vec<FileEntry> =
+                                tab.selected_entries().take(3).cloned().collect();
+                            let mut summary = SelectionSummary {
+                                count: n,
+                                ..Default::default()
+                            };
+                            for e in tab.selected_entries() {
+                                if e.is_dir {
+                                    summary.folders += 1;
+                                } else {
+                                    summary.files += 1;
+                                    summary.bytes += e.size;
+                                }
+                            }
+                            multiple(ui, app, &preview, summary);
+                        }
                     }
                 });
         });
@@ -216,14 +237,22 @@ fn single(ui: &mut Ui, app: &mut App, entry: &FileEntry, actions: &mut Vec<Actio
     }
 }
 
-fn multiple(ui: &mut Ui, app: &mut App, entries: &[FileEntry]) {
+#[derive(Default)]
+struct SelectionSummary {
+    count: usize,
+    files: usize,
+    folders: usize,
+    bytes: u64,
+}
+
+fn multiple(ui: &mut Ui, app: &mut App, preview: &[FileEntry], summary: SelectionSummary) {
     let p = app.palette.clone();
     let w = ui.available_width();
     let (rect, _) = ui.allocate_exact_size(vec2(w, 140.0), Sense::hover());
     ui.painter()
         .rect_filled(rect, CornerRadius::same(16), p.surface_container);
     // A small fan of the first few icons.
-    for (i, e) in entries.iter().take(3).enumerate().rev() {
+    for (i, e) in preview.iter().enumerate().rev() {
         let offset = vec2((i as f32 - 1.0) * 26.0, (i as f32 - 1.0).abs() * 6.0);
         let c = rect.center() + offset;
         ui.painter()
@@ -232,21 +261,18 @@ fn multiple(ui: &mut Ui, app: &mut App, entries: &[FileEntry]) {
     }
     ui.add_space(12.0);
     ui.label(
-        RichText::new(format!("{} items selected", entries.len()))
+        RichText::new(format!("{} items selected", summary.count))
             .size(17.0)
             .color(p.on_surface),
     );
-    let files: Vec<&FileEntry> = entries.iter().filter(|e| !e.is_dir).collect();
-    let folders = entries.len() - files.len();
-    let total: u64 = files.iter().map(|e| e.size).sum();
     ui.add_space(8.0);
     meta_row(
         ui,
         "Files",
-        &format!("{} ({})", files.len(), format_size(total)),
+        &format!("{} ({})", summary.files, format_size(summary.bytes)),
     );
-    if folders > 0 {
-        meta_row(ui, "Folders", &folders.to_string());
+    if summary.folders > 0 {
+        meta_row(ui, "Folders", &summary.folders.to_string());
     }
 }
 
