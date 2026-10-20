@@ -1,0 +1,50 @@
+# Maintainer: bhimio1
+pkgname=material-3-file-manager-git
+pkgver=0.2.0
+pkgrel=1
+pkgdesc="Material 3 file manager built with egui, themed by end4-pC / matugen"
+arch=('x86_64' 'aarch64')
+url="https://github.com/bhimio1/material-3-file-manager-rust"
+license=('unknown')  # TODO: pick a license
+depends=('libxkbcommon' 'wayland' 'libglvnd' 'fontconfig' 'xdg-utils')
+makedepends=('cargo' 'git')
+optdepends=(
+  'rclone: Google Drive'
+  'fuse3: mounting Google Drive'
+  'xdg-desktop-portal: file chooser portal (m3fm --portal)'
+)
+provides=('material-3-file-manager')
+conflicts=('material-3-file-manager')
+source=("$pkgname::git+$url.git")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd "$pkgname"
+  printf "0.2.0.r%s.g%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+prepare() {
+  cd "$pkgname"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$pkgname"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo build --frozen --release
+}
+
+check() {
+  cd "$pkgname"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo test --frozen
+}
+
+package() {
+  cd "$pkgname"
+  install -Dm755 target/release/m3fm "$pkgdir/usr/bin/m3fm"
+  install -Dm644 packaging/material_3_file_manager.desktop "$pkgdir/usr/share/applications/material_3_file_manager.desktop"
+  install -Dm644 assets/fonts/LICENSE-Inter.txt "$pkgdir/usr/share/licenses/$pkgname/LICENSE-Inter.txt"
+}
