@@ -1,45 +1,45 @@
 [package]
 name = "material_3_file_manager"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
+description = "A Material 3 file manager built with egui"
+
+[[bin]]
+name = "m3fm"
+path = "src/main.rs"
 
 [dependencies]
-gpui = { git = "https://github.com/zed-industries/zed" }
-tokio = { version = "1.0", features = ["full"] }
+eframe = { version = "0.37", default-features = false, features = ["default_fonts", "glow", "wayland", "x11", "persistence"] }
+egui = "0.37"
+egui_extras = { version = "0.37", features = ["image", "svg", "file"] }
+egui_material_icons = { version = "0.9", features = ["filled", "outline"] }
+resvg = { version = "0.45", default-features = false }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "ico", "tiff"] }
 material-colors = "0.4"
-zbus = { version = "4.0", features = ["tokio"] }
-notify = "6.0"
+zbus = "4"
+notify = "6"
 jwalk = "0.8"
 flume = "0.11"
 lru = "0.12"
-mime_guess = "2.0"
+mime_guess = "2"
 freedesktop-icons = "0.2"
-resvg = "0.41"
-image = "0.25"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.9"
+dirs = "6"
+trash = "5"
+anyhow = "1"
+chrono = "0.4"
+humansize = "2"
+open = "5"
+fuzzy-matcher = "0.3"
+sysinfo = "0.38"
+url = "2"
 log = "0.4"
 env_logger = "0.11"
-async-trait = "0.1.89"
-smallvec = "1.15.1"
-toml = "0.9.11"
-dirs = "6.0.0"
-trash = "5.2.5"
-anyhow = "1.0.100"
-chrono = "0.4.43"
-humansize = "2.1.3"
-human_bytes = "0.4.3"
-open = "5.3.3"
-arboard = "3.6.1"
-timeago = "0.5.0"
-fuzzy-matcher = "0.3.7"
-fs_extra = "1.3.0"
-sysinfo = "0.38.0"
-url = "2.5"
 
 [dev-dependencies]
-tempfile = "3.10"
+tempfile = "3"
 
-
-url = "2.5"
-
+[profile.release]
+lto = "thin"
