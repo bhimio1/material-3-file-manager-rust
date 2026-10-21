@@ -6,7 +6,7 @@ use super::{Action, ToastKind};
 use crate::app::{App, SHORTCUTS};
 use crate::config::SortKey;
 use crate::fs::apps::AppEntry;
-use crate::fs::entry::{format_size, format_time_full, sort_entries};
+use crate::fs::entry::{format_time_full, sort_entries};
 use crate::fs::portal::{PickKind, PickerSpec, PortalResponse};
 use crate::fs::scanner::{self, DirStats};
 use crate::fs::{launch, ops, FileEntry, FileKind};
@@ -15,7 +15,10 @@ use egui::{
     pos2, vec2, Color32, CornerRadius, FontId, Frame, Id, Key, Margin, Modal, Rect, RichText,
     Sense, Ui,
 };
-use egui_material_icons::icons::*;
+use material_3_ui::common::{dialog_buttons, modal};
+use material_3_ui::format::file_size;
+use material_3_ui::icons::icons::*;
+use material_3_ui::theme::M3Palette;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -278,39 +281,23 @@ fn unix_details(_meta: Option<&std::fs::Metadata>) -> (Option<String>, Option<St
     (None, None)
 }
 
-fn modal_frame(p: &crate::theme::M3Palette) -> Frame {
-    Frame::new()
-        .fill(p.surface_container_high)
-        .corner_radius(CornerRadius::same(28))
-        .inner_margin(Margin::same(24))
-        .shadow(egui::Shadow {
-            offset: [0, 8],
-            blur: 32,
-            spread: 0,
-            color: Color32::from_black_alpha(90),
-        })
-}
-
-fn title(ui: &mut Ui, icon: egui_material_icons::MaterialIcon, text: &str) {
-    let p = widgets::palette(ui);
-    ui.vertical_centered(|ui| {
-        widgets::icon(ui, icon, 26.0, p.secondary);
-        ui.add_space(8.0);
-        ui.label(RichText::new(text).size(22.0).color(p.on_surface));
-    });
-    ui.add_space(14.0);
-}
-
-/// A right-aligned row of dialog buttons. The fixed-height row keeps the
-/// right-to-left layout from claiming the modal's remaining height.
-fn right_buttons(ui: &mut Ui, add: impl FnOnce(&mut Ui)) {
-    ui.add_space(18.0);
-    let width = ui.available_width();
-    ui.allocate_ui_with_layout(
-        vec2(width, 36.0),
-        egui::Layout::right_to_left(egui::Align::Center),
-        add,
-    );
+/// A modal in the shared dialog style for dialogs that draw their own
+/// header (properties, the file picker); the others use [`modal`].
+fn untitled_modal(p: &M3Palette) -> Modal {
+    Modal::new(Id::unique("dialog"))
+        .backdrop_color(p.scrim.gamma_multiply(0.4))
+        .frame(
+            Frame::new()
+                .fill(p.surface_container_high)
+                .corner_radius(CornerRadius::same(28))
+                .inner_margin(Margin::same(24))
+                .shadow(egui::Shadow {
+                    offset: [0, 8],
+                    blur: 32,
+                    spread: 0,
+                    color: Color32::from_black_alpha(90),
+                }),
+        )
 }
 
 pub fn show(ctx: &egui::Context, app: &mut App) {
@@ -318,9 +305,6 @@ pub fn show(ctx: &egui::Context, app: &mut App) {
         return;
     };
     let p = app.palette.clone();
-    let modal = Modal::new(Id::unique("dialog"))
-        .backdrop_color(p.scrim.gamma_multiply(0.4))
-        .frame(modal_frame(&p));
     let keep = match &mut dialog {
         Dialog::NewName {
             dir,
@@ -330,17 +314,13 @@ pub fn show(ctx: &egui::Context, app: &mut App) {
             focus,
         } => {
             let mut keep = true;
-            let r = modal.show(ctx, |ui| {
+            let (icon, heading) = if *folder {
+                (ICON_CREATE_NEW_FOLDER, "New folder")
+            } else {
+                (ICON_NOTE_ADD, "New file")
+            };
+            let r = modal(ctx, &p, "new-name", icon, heading, |ui| {
                 ui.set_width(380.0);
-                title(
-                    ui,
-                    if *folder {
-                        ICON_CREATE_NEW_FOLDER
-                    } else {
-                        ICON_NOTE_ADD
-                    },
-                    if *folder { "New folder" } else { "New file" },
-                );
                 let resp = ui.add(
                     egui::TextEdit::singleline(name)
                         .desired_width(f32::INFINITY)
@@ -378,7 +358,7 @@ pub fn show(ctx: &egui::Context, app: &mut App) {
                         }),
                 );
                 let enter = resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter));
-                right_buttons(ui, |ui| {
+                dialog_buttons(ui, |ui| {
                     let create = widgets::button_enabled(
                         ui,
                         ButtonKind::Filled,
@@ -416,69 +396,84 @@ pub fn show(ctx: &egui::Context, app: &mut App) {
 
         Dialog::ConfirmDelete { paths } => {
             let mut keep = true;
-            let r = modal.show(ctx, |ui| {
-                ui.set_width(400.0);
-                let n = paths.len();
-                title(
-                    ui,
-                    ICON_DELETE_FOREVER,
-                    &if n == 1 {
-                        "Delete permanently?".to_string()
-                    } else {
-                        format!("Delete {n} items permanently?")
-                    },
-                );
-                for path in paths.iter().take(5) {
-                    ui.horizontal(|ui| {
-                        widgets::icon(
-                            ui,
-                            if path.is_dir() {
-                                ICON_FOLDER
-                            } else {
-                                ICON_DRAFT
-                            },
-                            18.0,
-                            p.on_surface_variant,
-                        );
+            let n = paths.len();
+            let heading = if n == 1 {
+                "Delete permanently?".to_string()
+            } else {
+                format!("Delete {n} items permanently?")
+            };
+            let r = modal(
+                ctx,
+                &p,
+                "confirm-delete",
+                ICON_DELETE_FOREVER,
+                &heading,
+                |ui| {
+                    ui.set_width(400.0);
+                    for path in paths.iter().take(5) {
+                        ui.horizontal(|ui| {
+                            widgets::icon(
+                                ui,
+                                if path.is_dir() {
+                                    ICON_FOLDER
+                                } else {
+                                    ICON_DRAFT
+                                },
+                                18.0,
+                                p.on_surface_variant,
+                            );
+                            ui.label(
+                                path.file_name()
+                                    .map(|n| n.to_string_lossy().into_owned())
+                                    .unwrap_or_default(),
+                            );
+                        });
+                    }
+                    if n > 5 {
                         ui.label(
-                            path.file_name()
-                                .map(|n| n.to_string_lossy().into_owned())
-                                .unwrap_or_default(),
+                            RichText::new(format!("…and {} more", n - 5))
+                                .color(p.on_surface_variant),
                         );
-                    });
-                }
-                if n > 5 {
+                    }
+                    ui.add_space(8.0);
                     ui.label(
-                        RichText::new(format!("…and {} more", n - 5)).color(p.on_surface_variant),
-                    );
-                }
-                ui.add_space(8.0);
-                ui.label(
                     RichText::new(
                         "This can't be undone. Use “Move to trash” if you might need them later.",
                     )
                     .size(13.0)
                     .color(p.on_surface_variant),
                 );
-                right_buttons(ui, |ui| {
-                    if widgets::button(ui, ButtonKind::Danger, Some(ICON_DELETE_FOREVER), "Delete")
+                    dialog_buttons(ui, |ui| {
+                        if widgets::button(
+                            ui,
+                            ButtonKind::Danger,
+                            Some(ICON_DELETE_FOREVER),
+                            "Delete",
+                        )
                         .clicked()
-                    {
-                        let job = ops::remove(paths.clone(), ops::JobKind::Delete, app.notify());
-                        app.jobs.push(job);
-                        keep = false;
-                    }
-                    if widgets::button(ui, ButtonKind::Text, None, "Cancel").clicked() {
-                        keep = false;
-                    }
-                    if widgets::button(ui, ButtonKind::Tonal, Some(ICON_DELETE), "Move to trash")
+                        {
+                            let job =
+                                ops::remove(paths.clone(), ops::JobKind::Delete, app.notify());
+                            app.jobs.push(job);
+                            keep = false;
+                        }
+                        if widgets::button(ui, ButtonKind::Text, None, "Cancel").clicked() {
+                            keep = false;
+                        }
+                        if widgets::button(
+                            ui,
+                            ButtonKind::Tonal,
+                            Some(ICON_DELETE),
+                            "Move to trash",
+                        )
                         .clicked()
-                    {
-                        app.actions.push(Action::Trash(paths.clone()));
-                        keep = false;
-                    }
-                });
-            });
+                        {
+                            app.actions.push(Action::Trash(paths.clone()));
+                            keep = false;
+                        }
+                    });
+                },
+            );
             keep && !r.should_close()
         }
 
@@ -490,7 +485,7 @@ pub fn show(ctx: &egui::Context, app: &mut App) {
                 }
             }
             let mut keep = true;
-            let r = modal.show(ctx, |ui| {
+            let r = untitled_modal(&p).show(ctx, |ui| {
                 ui.set_width(460.0);
                 properties_ui(ui, app, props, &mut keep);
             });
@@ -499,7 +494,7 @@ pub fn show(ctx: &egui::Context, app: &mut App) {
 
         Dialog::OpenWith(ow) => {
             let mut keep = true;
-            let r = modal.show(ctx, |ui| {
+            let r = modal(ctx, &p, "open-with", ICON_APPS, "Open with", |ui| {
                 ui.set_width(440.0);
                 open_with_ui(ui, app, ow, &mut keep);
             });
@@ -508,7 +503,7 @@ pub fn show(ctx: &egui::Context, app: &mut App) {
 
         Dialog::Picker(picker) => {
             let mut keep = true;
-            let r = modal.show(ctx, |ui| {
+            let r = untitled_modal(&p).show(ctx, |ui| {
                 ui.set_width(720.0);
                 ui.set_height(520.0);
                 picker_ui(ui, app, picker, &mut keep);
@@ -524,10 +519,15 @@ pub fn show(ctx: &egui::Context, app: &mut App) {
                 .and_then(|c| c.auth_url.lock().unwrap().clone());
             let waiting = app.cloud.connect.is_some() || app.cloud.preparing_connect;
             let mut cancel = false;
-            let r = modal.show(ctx, |ui| {
-                ui.set_width(420.0);
-                title(ui, ICON_ADD_TO_DRIVE, "Connect Google Drive");
-                ui.vertical_centered(|ui| {
+            let r = modal(
+                ctx,
+                &p,
+                "cloud-connect",
+                ICON_ADD_TO_DRIVE,
+                "Connect Google Drive",
+                |ui| {
+                    ui.set_width(420.0);
+                    ui.vertical_centered(|ui| {
                     ui.add(egui::Spinner::new().size(28.0).color(p.primary));
                     ui.add_space(10.0);
                     let text = if app.cloud.preparing_connect {
@@ -544,10 +544,11 @@ pub fn show(ctx: &egui::Context, app: &mut App) {
                         }
                     }
                 });
-                right_buttons(ui, |ui| {
-                    cancel = widgets::button(ui, ButtonKind::Text, None, "Cancel").clicked();
-                });
-            });
+                    dialog_buttons(ui, |ui| {
+                        cancel = widgets::button(ui, ButtonKind::Text, None, "Cancel").clicked();
+                    });
+                },
+            );
             if cancel || r.should_close() {
                 app.actions.push(Action::CloudCancelConnect);
                 false
@@ -559,60 +560,75 @@ pub fn show(ctx: &egui::Context, app: &mut App) {
 
         Dialog::ConfirmDisconnect { remote } => {
             let mut keep = true;
-            let r = modal.show(ctx, |ui| {
-                ui.set_width(400.0);
-                title(ui, ICON_CLOUD_OFF, "Disconnect Google Drive?");
-                ui.add(
+            let r = modal(
+                ctx,
+                &p,
+                "cloud-disconnect",
+                ICON_CLOUD_OFF,
+                "Disconnect Google Drive?",
+                |ui| {
+                    ui.set_width(400.0);
+                    ui.add(
                     egui::Label::new(
                         RichText::new("The drive is unmounted and this computer is signed out of it. Your files stay in Google Drive.")
                             .color(p.on_surface_variant),
                     )
                     .wrap(),
                 );
-                right_buttons(ui, |ui| {
-                    if widgets::button(ui, ButtonKind::Danger, None, "Disconnect").clicked() {
-                        app.actions.push(Action::CloudDisconnectConfirmed(remote.clone()));
-                        keep = false;
-                    }
-                    if widgets::button(ui, ButtonKind::Text, None, "Cancel").clicked() {
-                        keep = false;
-                    }
-                });
-            });
+                    dialog_buttons(ui, |ui| {
+                        if widgets::button(ui, ButtonKind::Danger, None, "Disconnect").clicked() {
+                            app.actions
+                                .push(Action::CloudDisconnectConfirmed(remote.clone()));
+                            keep = false;
+                        }
+                        if widgets::button(ui, ButtonKind::Text, None, "Cancel").clicked() {
+                            keep = false;
+                        }
+                    });
+                },
+            );
             keep && !r.should_close()
         }
 
         Dialog::Shortcuts => {
-            let r = modal.show(ctx, |ui| {
-                ui.set_width(560.0);
-                title(ui, ICON_KEYBOARD, "Keyboard shortcuts");
-                egui::ScrollArea::vertical()
-                    .max_height(460.0)
-                    .show(ui, |ui| {
-                        egui::Grid::new("shortcuts")
-                            .num_columns(2)
-                            .spacing(vec2(24.0, 8.0))
-                            .striped(false)
-                            .show(ui, |ui| {
-                                for (keys, what) in SHORTCUTS {
-                                    Frame::new()
-                                        .fill(p.surface_container_highest)
-                                        .corner_radius(CornerRadius::same(6))
-                                        .inner_margin(Margin::symmetric(8, 3))
-                                        .show(ui, |ui| {
-                                            ui.label(RichText::new(*keys).monospace().size(12.5));
-                                        });
-                                    ui.label(*what);
-                                    ui.end_row();
-                                }
-                            });
+            let r = modal(
+                ctx,
+                &p,
+                "shortcuts",
+                ICON_KEYBOARD,
+                "Keyboard shortcuts",
+                |ui| {
+                    ui.set_width(560.0);
+                    egui::ScrollArea::vertical()
+                        .max_height(460.0)
+                        .show(ui, |ui| {
+                            egui::Grid::new("shortcuts")
+                                .num_columns(2)
+                                .spacing(vec2(24.0, 8.0))
+                                .striped(false)
+                                .show(ui, |ui| {
+                                    for (keys, what) in SHORTCUTS {
+                                        Frame::new()
+                                            .fill(p.surface_container_highest)
+                                            .corner_radius(CornerRadius::same(6))
+                                            .inner_margin(Margin::symmetric(8, 3))
+                                            .show(ui, |ui| {
+                                                ui.label(
+                                                    RichText::new(*keys).monospace().size(12.5),
+                                                );
+                                            });
+                                        ui.label(*what);
+                                        ui.end_row();
+                                    }
+                                });
+                        });
+                    let mut close = false;
+                    dialog_buttons(ui, |ui| {
+                        close = widgets::button(ui, ButtonKind::Filled, None, "Done").clicked();
                     });
-                let mut close = false;
-                right_buttons(ui, |ui| {
-                    close = widgets::button(ui, ButtonKind::Filled, None, "Done").clicked();
-                });
-                close
-            });
+                    close
+                },
+            );
             !r.inner && !r.should_close()
         }
     };
@@ -687,7 +703,7 @@ fn properties_ui(ui: &mut Ui, app: &mut App, props: &mut Properties, keep: &mut 
                     Some(s) => {
                         row(
                             "Size",
-                            format!("{} ({} bytes)", format_size(s.bytes), s.bytes),
+                            format!("{} ({} bytes)", file_size(s.bytes), s.bytes),
                         );
                         row(
                             "Contents",
@@ -701,10 +717,7 @@ fn properties_ui(ui: &mut Ui, app: &mut App, props: &mut Properties, keep: &mut 
                     None => row("Size", "Calculating…".into()),
                 }
             } else if let Some(e) = &props.entry {
-                row(
-                    "Size",
-                    format!("{} ({} bytes)", format_size(e.size), e.size),
-                );
+                row("Size", format!("{} ({} bytes)", file_size(e.size), e.size));
             }
             if let Some((w, h)) = props.dims {
                 row("Dimensions", format!("{w} × {h} pixels"));
@@ -741,7 +754,7 @@ fn properties_ui(ui: &mut Ui, app: &mut App, props: &mut Properties, keep: &mut 
         ui.add_space(6.0);
         widgets::linear_progress(ui, None, ui.available_width());
     }
-    right_buttons(ui, |ui| {
+    dialog_buttons(ui, |ui| {
         if widgets::button(ui, ButtonKind::Filled, None, "Close").clicked() {
             *keep = false;
         }
@@ -761,7 +774,6 @@ fn open_with_ui(ui: &mut Ui, app: &mut App, ow: &mut OpenWith, keep: &mut bool) 
         .file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_default();
-    title(ui, ICON_APPS, "Open with");
     ui.vertical_centered(|ui| {
         ui.label(
             RichText::new(format!("“{file_name}” · {}", ow.mime))
@@ -940,7 +952,7 @@ fn open_with_ui(ui: &mut Ui, app: &mut App, ow: &mut OpenWith, keep: &mut bool) 
             }
         });
 
-    right_buttons(ui, |ui| {
+    dialog_buttons(ui, |ui| {
         if widgets::button(ui, ButtonKind::Text, None, "Cancel").clicked() {
             *keep = false;
         }
@@ -1210,7 +1222,7 @@ fn picker_ui(ui: &mut Ui, app: &mut App, picker: &mut Picker, keep: &mut bool) {
                                     ui.painter().text(
                                         pos2(rect.right() - 10.0, rect.center().y),
                                         egui::Align2::RIGHT_CENTER,
-                                        format_size(e.size),
+                                        file_size(e.size),
                                         FontId::proportional(12.5),
                                         p.on_surface_variant,
                                     );

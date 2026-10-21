@@ -3,12 +3,12 @@
 use super::widgets::{self, clickable_card, menu_item, paint_icon, truncated_galley, ButtonKind};
 use super::{Action, DragPaths};
 use crate::app::App;
-use crate::fs::entry::format_size;
 use crate::fs::places;
 use crate::tab::Location;
 use chrono::Timelike;
 use egui::{pos2, vec2, Align2, CornerRadius, FontId, Id, Rect, RichText, Sense, Ui};
-use egui_material_icons::icons::*;
+use material_3_ui::format::file_size;
+use material_3_ui::icons::icons::*;
 use std::path::{Path, PathBuf};
 
 fn greeting() -> &'static str {
@@ -142,14 +142,14 @@ fn folder_card(ui: &mut Ui, rect: Rect, path: &Path, pinned: bool, actions: &mut
     let path = path.to_path_buf();
     resp.on_hover_text(path.to_string_lossy())
         .context_menu(|ui| {
-            if menu_item(ui, ICON_OPEN_IN_NEW, "Open in new tab", "").clicked() {
+            if menu_item(ui, Some(ICON_OPEN_IN_NEW), "Open in new tab", "", false) {
                 actions.push(Action::OpenInNewTab(Location::Folder(path.clone())));
             }
             if pinned {
-                if menu_item(ui, ICON_KEEP_OFF, "Unpin", "").clicked() {
+                if menu_item(ui, Some(ICON_KEEP_OFF), "Unpin", "", false) {
                     actions.push(Action::Unpin(path.clone()));
                 }
-            } else if menu_item(ui, ICON_KEEP, "Pin", "").clicked() {
+            } else if menu_item(ui, Some(ICON_KEEP), "Pin", "", false) {
                 actions.push(Action::Pin(path.clone()));
             }
         });
@@ -259,7 +259,7 @@ pub fn show(ui: &mut Ui, app: &mut App) {
 
 struct StorageCard {
     id: String,
-    icon: egui_material_icons::MaterialIcon,
+    icon: material_3_ui::icons::MaterialIcon,
     name: String,
     /// (used, total) bytes.
     usage: Option<(u64, u64)>,
@@ -301,7 +301,7 @@ fn storage_card(ui: &mut Ui, rect: Rect, card: &StorageCard) -> Option<Action> {
         ui.painter().text(
             pos2(rect.left() + 18.0, rect.top() + 58.0),
             Align2::LEFT_CENTER,
-            format!("{} used of {}", format_size(used), format_size(total)),
+            format!("{} used of {}", file_size(used), file_size(total)),
             small.clone(),
             p.on_surface_variant,
         );

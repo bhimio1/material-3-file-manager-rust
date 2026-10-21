@@ -3,10 +3,10 @@
 use super::widgets::{self, paint_icon};
 use super::Action;
 use crate::app::App;
-use crate::fs::entry::format_size;
 use crate::fs::places;
 use egui::{pos2, vec2, RichText, Sense, Ui};
-use egui_material_icons::icons::*;
+use material_3_ui::format::file_size;
+use material_3_ui::icons::icons::*;
 use std::sync::atomic::Ordering;
 
 pub fn show(ui: &mut Ui, app: &mut App) {
@@ -27,7 +27,7 @@ pub fn show(ui: &mut Ui, app: &mut App) {
                 .sum();
             text.push_str(&format!(" · {selected} selected"));
             if bytes > 0 {
-                text.push_str(&format!(" ({})", format_size(bytes)));
+                text.push_str(&format!(" ({})", file_size(bytes)));
             }
         }
         ui.label(small(text));
@@ -39,12 +39,12 @@ pub fn show(ui: &mut Ui, app: &mut App) {
             let cloud = tab.folder().and_then(|f| app.config.cloud_drive_for(f));
             if let Some(d) = cloud {
                 if let Some(q) = app.cloud.quota.get(&d.remote) {
-                    ui.label(small(format!("{} free on {}", format_size(q.free), d.name)));
+                    ui.label(small(format!("{} free on {}", file_size(q.free), d.name)));
                 }
                 widgets::icon(ui, ICON_CLOUD, 14.0, p.on_surface_variant);
             } else if let Some(drive) = tab.folder().and_then(|f| places::drive_for(&app.drives, f))
             {
-                ui.label(small(format!("{} free", format_size(drive.available))));
+                ui.label(small(format!("{} free", file_size(drive.available))));
                 widgets::icon(ui, drive.icon(), 14.0, p.on_surface_variant);
             }
             for job in &app.jobs {
@@ -73,11 +73,7 @@ pub fn show(ui: &mut Ui, app: &mut App) {
                 let done = job.progress.done_bytes.load(Ordering::Relaxed);
                 let total = job.progress.total_bytes.load(Ordering::Relaxed);
                 if total > 0 {
-                    ui.label(small(format!(
-                        "{} / {}",
-                        format_size(done),
-                        format_size(total)
-                    )));
+                    ui.label(small(format!("{} / {}", file_size(done), file_size(total))));
                 }
             }
             if let Some(clip) = &app.clipboard {

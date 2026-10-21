@@ -1,17 +1,19 @@
 //! Top-level application state, frame layout and action dispatch.
 
-use crate::config::{ColorScheme, Config, ThemeSource, ViewMode};
+use crate::config::{Config, ViewMode};
 use crate::fs::apps::{scan_applications, AppEntry};
 use crate::fs::ops::{self, Job, JobKind, Notify};
 use crate::fs::places::{self, Drive, Place};
 use crate::fs::{launch, portal};
+use crate::matugen;
 use crate::tab::{Location, Tab};
-use crate::theme::{matugen, style, M3Palette};
 use crate::thumbs::Thumbnails;
 use crate::ui::dialogs::{self, Dialog, PickerPurpose};
-use crate::ui::toasts::{Toast, Toasts};
-use crate::ui::{self, widgets, Action, Actions, DragPaths, ToastKind};
-use egui::{CornerRadius, Frame, Key, KeyboardShortcut, Margin, Modifiers};
+use crate::ui::{self, widgets, Action, Actions, DragPaths, Toast, ToastKind, Toasts};
+use egui::{CornerRadius, Frame, Key, Margin, Modifiers};
+use material_3_ui::keys::take_key_in;
+use material_3_ui::sys::task::Task;
+use material_3_ui::theme::{M3Palette, ThemeManager};
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -40,19 +42,21 @@ pub struct App {
     pub config: Config,
     last_saved_config: String,
     pub palette: M3Palette,
-    system_dark: Option<bool>,
+    pub theme: ThemeManager,
     pub tabs: Vec<Tab>,
     pub active: usize,
     pub thumbs: Thumbnails,
     pub apps: Option<Arc<Vec<AppEntry>>>,
-    apps_rx: Option<flume::Receiver<Vec<AppEntry>>>,
+    apps_task: Task<Vec<AppEntry>>,
     pub drives: Vec<Drive>,
-    drives_rx: Option<flume::Receiver<Vec<Drive>>>,
+    drives_task: Task<Vec<Drive>>,
     drives_at: Instant,
     pub places: Vec<Place>,
     pub clipboard: Option<Clip>,
     pub jobs: Vec<Job>,
     pub toasts: Toasts,
+    /// Result of restoring items from the trash (the toast's Undo).
+    pub pending_restore: Option<flume::Receiver<Result<usize, String>>>,
     pub dialog: Option<Dialog>,
     pub show_details: bool,
     portal_rx: Option<flume::Receiver<portal::PortalRequest>>,
@@ -100,14 +104,18 @@ pub const SHORTCUTS: &[(&str, &str)] = &[
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>, startup: Startup) -> Self {
         let ctx = cc.egui_ctx.clone();
-        style::install_fonts(&ctx);
         egui_extras::install_image_loaders(&ctx);
         ctx.options_mut(|o| o.zoom_with_keyboard = false);
 
         let config = Config::load();
         let last_saved_config = config.to_toml();
+        // matugen writes theme.json here; the folder must exist to be watched.
+        if let Some(dir) = matugen::config_dir() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let theme = ThemeManager::new(&ctx, &config.ui.appearance);
 
-        // Watch our config dir and matugen's output for live reloads.
+        // Watch our config file for edits made outside the app.
         let (cfg_tx, cfg_rx) = flume::unbounded();
         let config_watcher = {
             use notify::Watcher;
@@ -125,21 +133,8 @@ impl App {
             })
             .ok()
             .map(|mut w| {
-                for dir in [
-                    Config::path().and_then(|p| p.parent().map(Path::to_path_buf)),
-                    matugen::config_dir(),
-                ]
-                .into_iter()
-                .flatten()
-                {
+                if let Some(dir) = Config::path().and_then(|p| p.parent().map(Path::to_path_buf)) {
                     let _ = std::fs::create_dir_all(&dir);
-                    let _ = w.watch(&dir, notify::RecursiveMode::NonRecursive);
-                }
-                // The shell's folder belongs to it, so only watch it if it exists.
-                if let Some(dir) = matugen::end4_colors_path()
-                    .and_then(|p| p.parent().map(Path::to_path_buf))
-                    .filter(|d| d.is_dir())
-                {
                     let _ = w.watch(&dir, notify::RecursiveMode::NonRecursive);
                 }
                 w
@@ -152,10 +147,8 @@ impl App {
             .map(Location::Folder)
             .unwrap_or(Location::Dashboard);
 
-        let (apps_tx, apps_rx) = flume::bounded(1);
-        std::thread::spawn(move || {
-            let _ = apps_tx.send(scan_applications());
-        });
+        let mut apps_task = Task::default();
+        apps_task.spawn(&ctx, scan_applications);
 
         let portal_rx = startup.portal.then(|| {
             let ctx = ctx.clone();
@@ -171,19 +164,20 @@ impl App {
             thumbs: Thumbnails::new(ctx.clone()),
             tabs: vec![Tab::new(start, &ctx)],
             active: 0,
-            palette: M3Palette::from_seed(crate::theme::palette::DEFAULT_SEED, true),
-            system_dark: ctx.system_theme().map(|t| t == egui::Theme::Dark),
+            palette: theme.palette().clone(),
+            theme,
             config,
             last_saved_config,
             apps: None,
-            apps_rx: Some(apps_rx),
+            apps_task,
             drives: places::drives(),
-            drives_rx: None,
+            drives_task: Task::default(),
             drives_at: Instant::now(),
             places: places::standard_places(),
             clipboard: None,
             jobs: Vec::new(),
             toasts: Toasts::default(),
+            pending_restore: None,
             dialog: None,
             show_details,
             portal_rx,
@@ -196,7 +190,7 @@ impl App {
             cloud: Default::default(),
             ctx,
         };
-        app.apply_theme();
+        app.theme_error();
         app.sync_cloud_mounts();
         app.cloud_init();
         app
@@ -221,48 +215,18 @@ impl App {
 
     // ------------------------------------------------------------------ theme
 
-    fn wants_dark(&self) -> bool {
-        match self.config.ui.color_scheme {
-            ColorScheme::Light => false,
-            ColorScheme::Dark => true,
-            ColorScheme::System => self.system_dark.unwrap_or(true),
-        }
-    }
-
-    /// Which palette source is in effect right now.
-    pub fn effective_theme_source(&self) -> ThemeSource {
-        let has_json = matugen::palette_path().is_some();
-        match self.config.ui.theme_source {
-            ThemeSource::Auto if has_json => ThemeSource::Matugen,
-            ThemeSource::Auto => ThemeSource::Seed,
-            ThemeSource::Matugen if !has_json => ThemeSource::Seed,
-            other => other,
-        }
-    }
-
+    /// Re-apply the appearance settings (after they changed).
     pub fn apply_theme(&mut self) {
-        let dark = self.wants_dark();
-        let palette = match self.effective_theme_source() {
-            ThemeSource::Matugen => {
-                let path = matugen::palette_path().unwrap_or_default();
-                match M3Palette::from_theme_json(&path) {
-                    Ok(p) => p,
-                    Err(e) => {
-                        self.toast(format!("Couldn't read {}: {e}", path.display()), ToastKind::Error);
-                        M3Palette::from_seed(&self.config.ui.seed_color, dark)
-                    }
-                }
-            }
-            _ => M3Palette::from_seed(&self.config.ui.seed_color, dark),
-        };
-        style::apply(&self.ctx, &palette);
-        widgets::set_palette(&self.ctx, palette.clone());
-        widgets::set_filled_icons(self.config.ui.filled_icons);
-        let scale = self.config.ui.ui_scale.clamp(0.6, 2.5);
-        if (self.ctx.zoom_factor() - scale).abs() > f32::EPSILON {
-            self.ctx.set_zoom_factor(scale);
+        self.theme.apply(&self.config.ui.appearance);
+        self.palette = self.theme.palette().clone();
+        self.theme_error();
+    }
+
+    /// Show a palette file that couldn't be read.
+    fn theme_error(&mut self) {
+        if let Some(e) = self.theme.take_error() {
+            self.toast(e, ToastKind::Error);
         }
-        self.palette = palette;
     }
 
     // ----------------------------------------------------------------- config
@@ -324,49 +288,28 @@ impl App {
                 }
             }
         }
-        let palette = matugen::palette_path();
-        if changed.iter().any(|p| {
-            Some(p) == palette.as_ref()
-                || p.file_name().is_some_and(|n| n == "theme.json" || n == "colors.json")
-        }) {
-            self.apply_theme();
-        }
     }
 
     // ---------------------------------------------------------- background work
 
     fn poll_background(&mut self) {
-        if let Some(rx) = &self.apps_rx {
-            if let Ok(apps) = rx.try_recv() {
-                self.apps = Some(Arc::new(apps));
-                self.apps_rx = None;
-            }
+        if let Some(apps) = self.apps_task.take() {
+            self.apps = Some(Arc::new(apps));
         }
 
         // Refresh drives every few seconds off the UI thread.
-        if let Some(rx) = &self.drives_rx {
-            if let Ok(drives) = rx.try_recv() {
-                self.drives = drives;
-                self.drives_rx = None;
-            }
-        } else if self.drives_at.elapsed() > Duration::from_secs(5) {
+        if let Some(drives) = self.drives_task.take() {
+            self.drives = drives;
+        } else if !self.drives_task.running() && self.drives_at.elapsed() > Duration::from_secs(5) {
             self.drives_at = Instant::now();
-            let (tx, rx) = flume::bounded(1);
-            let ctx = self.ctx.clone();
-            std::thread::spawn(move || {
-                let _ = tx.send(places::drives());
-                ctx.request_repaint();
-            });
-            self.drives_rx = Some(rx);
+            self.drives_task.spawn(&self.ctx, places::drives);
         }
         self.ctx.request_repaint_after(Duration::from_secs(5));
 
-        let system_dark = self.ctx.system_theme().map(|t| t == egui::Theme::Dark);
-        if system_dark != self.system_dark {
-            self.system_dark = system_dark;
-            if self.config.ui.color_scheme == ColorScheme::System {
-                self.apply_theme();
-            }
+        // The desktop's palette file and light/dark preference.
+        if self.theme.poll(&self.config.ui.appearance) {
+            self.palette = self.theme.palette().clone();
+            self.theme_error();
         }
 
         for tab in &mut self.tabs {
@@ -666,7 +609,7 @@ impl App {
                     let _ = tx.send(restore_from_trash(&paths));
                     notify();
                 });
-                self.toasts.pending_restore = Some(rx);
+                self.pending_restore = Some(rx);
             }
             Action::DeleteForever(paths) => {
                 if !paths.is_empty() {
@@ -848,9 +791,9 @@ impl App {
         let mut cut_event = false;
 
         self.ctx.input_mut(|i| {
-            let sc = |i: &mut egui::InputState, m: Modifiers, k: Key| {
-                i.consume_shortcut(&KeyboardShortcut::new(m, k))
-            };
+            // Modifiers must match exactly: Ctrl+Tab doesn't take Ctrl+Shift+Tab.
+            let sc =
+                |i: &mut egui::InputState, m: Modifiers, k: Key| take_key_in(&mut i.events, m, k);
 
             // Shortcuts that work everywhere (even while typing).
             if sc(i, ctrl, Key::T) {
@@ -914,7 +857,7 @@ impl App {
                 self.config.ui.view_mode = ViewMode::List;
                 actions.push(Action::ConfigChanged);
             }
-            if sc(i, ctrl, Key::Equals) || sc(i, ctrl, Key::Plus) {
+            if sc(i, ctrl, Key::Equals) || sc(i, ctrl, Key::Plus) || sc(i, ctrl_shift, Key::Plus) {
                 self.config.ui.icon_size = (self.config.ui.icon_size + 16).min(160);
                 actions.push(Action::ConfigChanged);
             }
@@ -1140,9 +1083,9 @@ fn restore_from_trash(paths: &[PathBuf]) -> Result<usize, String> {
 impl eframe::App for App {
     fn logic(&mut self, _ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.poll_background();
-        if let Some(rx) = &self.toasts.pending_restore {
+        if let Some(rx) = &self.pending_restore {
             if let Ok(result) = rx.try_recv() {
-                self.toasts.pending_restore = None;
+                self.pending_restore = None;
                 match result {
                     Ok(n) => self.toast(
                         format!("Restored {n} item{}", if n == 1 { "" } else { "s" }),
@@ -1162,7 +1105,14 @@ impl eframe::App for App {
         self.handle_shortcuts();
         self.layout(ui);
         dialogs::show(&self.ctx.clone(), self);
-        ui::toasts::show(&self.ctx.clone(), self);
+        // Above the status bar in folders.
+        let bottom = if self.tab().folder().is_some() {
+            44.0
+        } else {
+            20.0
+        };
+        let fired = self.toasts.show(&self.ctx, &self.palette, bottom);
+        self.actions.extend(fired);
         paint_drag_ghost(&self.ctx, &self.palette);
         if !ui.ctx().input(|i| i.raw.dropped_files.is_empty()) {
             self.handle_os_drop();
@@ -1234,9 +1184,9 @@ fn paint_drag_ghost(ctx: &egui::Context, p: &M3Palette) {
                         widgets::icon(
                             ui,
                             if copy {
-                                egui_material_icons::icons::ICON_FILE_COPY
+                                material_3_ui::icons::icons::ICON_FILE_COPY
                             } else {
-                                egui_material_icons::icons::ICON_DRIVE_FILE_MOVE
+                                material_3_ui::icons::icons::ICON_DRIVE_FILE_MOVE
                             },
                             18.0,
                             p.inverse_on_surface,

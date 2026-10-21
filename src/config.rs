@@ -4,6 +4,7 @@
 //! every field that existed there keeps its name and meaning, new fields all
 //! have serde defaults so old files keep loading.
 
+use material_3_ui::theme::{ColorScheme, ThemeSettings, ThemeSource};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::path::{Path, PathBuf};
@@ -17,28 +18,6 @@ pub enum ViewMode {
     #[default]
     Grid,
     List,
-}
-
-#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum ColorScheme {
-    #[default]
-    System,
-    Light,
-    Dark,
-}
-
-/// Where the Material palette comes from.
-#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum ThemeSource {
-    /// Use matugen's `theme.json` when it exists, otherwise the seed color.
-    #[default]
-    Auto,
-    /// Always use `theme.json` (written by matugen).
-    Matugen,
-    /// Generate a tonal palette from `seed_color`.
-    Seed,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq, Hash)]
@@ -69,8 +48,12 @@ impl SortKey {
     }
 }
 
+/// The `[ui]` table. Appearance lives in a shared [`ThemeSettings`] in
+/// memory but is stored under this file's own names (`theme_source`,
+/// `color_scheme`, …), so existing config files keep their theme and older
+/// versions of the app can still read new ones.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-#[serde(default)]
+#[serde(from = "UiConfigFile", into = "UiConfigFile")]
 pub struct UiConfig {
     /// Legacy field from the gpui build; kept so it round-trips.
     pub theme: Option<String>,
@@ -79,16 +62,12 @@ pub struct UiConfig {
     pub view_mode: ViewMode,
     /// Grid tile icon size in points.
     pub icon_size: u32,
-    pub filled_icons: bool,
-    pub color_scheme: ColorScheme,
-    pub theme_source: ThemeSource,
-    pub seed_color: String,
+    pub appearance: ThemeSettings,
     pub show_thumbnails: bool,
     pub show_preview_pane: bool,
     pub sort_by: SortKey,
     pub sort_ascending: bool,
     pub folders_first: bool,
-    pub ui_scale: f32,
 }
 
 impl Default for UiConfig {
@@ -99,16 +78,103 @@ impl Default for UiConfig {
             show_hidden: false,
             view_mode: ViewMode::Grid,
             icon_size: 64,
-            filled_icons: true,
-            color_scheme: ColorScheme::System,
-            theme_source: ThemeSource::Auto,
-            seed_color: "#4285F4".to_string(),
+            appearance: ThemeSettings::default(),
             show_thumbnails: true,
             show_preview_pane: true,
             sort_by: SortKey::Name,
             sort_ascending: true,
             folders_first: true,
-            ui_scale: 1.0,
+        }
+    }
+}
+
+/// Where the palette comes from, as stored in `theme_source`. `matugen`
+/// is from older versions, where it meant the same as `auto` (the desktop's
+/// palette file, else the seed color).
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+enum StoredThemeSource {
+    Auto,
+    Matugen,
+    Seed,
+}
+
+/// [`UiConfig`] as written to config.toml.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(default)]
+struct UiConfigFile {
+    theme: Option<String>,
+    icon_theme: Option<String>,
+    show_hidden: bool,
+    view_mode: ViewMode,
+    icon_size: u32,
+    filled_icons: bool,
+    color_scheme: ColorScheme,
+    theme_source: StoredThemeSource,
+    seed_color: String,
+    show_thumbnails: bool,
+    show_preview_pane: bool,
+    sort_by: SortKey,
+    sort_ascending: bool,
+    folders_first: bool,
+    ui_scale: f32,
+}
+
+impl Default for UiConfigFile {
+    fn default() -> Self {
+        UiConfig::default().into()
+    }
+}
+
+impl From<UiConfigFile> for UiConfig {
+    fn from(f: UiConfigFile) -> Self {
+        Self {
+            theme: f.theme,
+            icon_theme: f.icon_theme,
+            show_hidden: f.show_hidden,
+            view_mode: f.view_mode,
+            icon_size: f.icon_size,
+            appearance: ThemeSettings {
+                source: match f.theme_source {
+                    StoredThemeSource::Auto | StoredThemeSource::Matugen => ThemeSource::Auto,
+                    StoredThemeSource::Seed => ThemeSource::Seed,
+                },
+                scheme: f.color_scheme,
+                seed_color: f.seed_color,
+                filled_icons: f.filled_icons,
+                ui_scale: f.ui_scale,
+            },
+            show_thumbnails: f.show_thumbnails,
+            show_preview_pane: f.show_preview_pane,
+            sort_by: f.sort_by,
+            sort_ascending: f.sort_ascending,
+            folders_first: f.folders_first,
+        }
+    }
+}
+
+impl From<UiConfig> for UiConfigFile {
+    fn from(c: UiConfig) -> Self {
+        let a = c.appearance;
+        Self {
+            theme: c.theme,
+            icon_theme: c.icon_theme,
+            show_hidden: c.show_hidden,
+            view_mode: c.view_mode,
+            icon_size: c.icon_size,
+            filled_icons: a.filled_icons,
+            color_scheme: a.scheme,
+            theme_source: match a.source {
+                ThemeSource::Auto => StoredThemeSource::Auto,
+                ThemeSource::Seed => StoredThemeSource::Seed,
+            },
+            seed_color: a.seed_color,
+            show_thumbnails: c.show_thumbnails,
+            show_preview_pane: c.show_preview_pane,
+            sort_by: c.sort_by,
+            sort_ascending: c.sort_ascending,
+            folders_first: c.folders_first,
+            ui_scale: a.ui_scale,
         }
     }
 }
@@ -396,5 +462,40 @@ view_mode = "list"
         assert_eq!(config.ui.icon_size, 64);
         assert_eq!(config.command("terminal"), Some("foot"));
         assert!(!config.file_categories.is_empty());
+        assert_eq!(config.ui.appearance, ThemeSettings::default());
+    }
+
+    #[test]
+    fn appearance_keeps_its_stored_names() {
+        let old = r##"
+[ui]
+filled_icons = false
+color_scheme = "light"
+theme_source = "seed"
+seed_color = "#B3261E"
+ui_scale = 1.25
+"##;
+        let config: Config = toml::from_str(old).unwrap();
+        let a = &config.ui.appearance;
+        assert_eq!(a.source, ThemeSource::Seed);
+        assert_eq!(a.scheme, ColorScheme::Light);
+        assert_eq!(a.seed_color, "#B3261E");
+        assert!(!a.filled_icons);
+        assert_eq!(a.ui_scale, 1.25);
+
+        // Saved under the same names, so the file round-trips.
+        let saved = config.to_toml();
+        assert!(saved.contains("theme_source = \"seed\""));
+        assert!(saved.contains("color_scheme = \"light\""));
+        assert!(!saved.contains("[ui.appearance]"));
+        let back: Config = toml::from_str(&saved).unwrap();
+        assert_eq!(back, config);
+    }
+
+    #[test]
+    fn matugen_source_means_auto() {
+        let config: Config = toml::from_str("[ui]\ntheme_source = \"matugen\"\n").unwrap();
+        assert_eq!(config.ui.appearance.source, ThemeSource::Auto);
+        assert!(config.to_toml().contains("theme_source = \"auto\""));
     }
 }

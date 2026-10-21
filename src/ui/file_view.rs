@@ -6,16 +6,17 @@ use super::widgets::{self, menu_item, paint_icon, ButtonKind};
 use super::{Action, DragPaths};
 use crate::app::App;
 use crate::config::{Config, SortKey, ViewMode};
-use crate::fs::entry::{format_size, format_time};
+use crate::fs::entry::format_time;
 use crate::fs::FileEntry;
 use crate::tab::{Location, Tab};
-use crate::theme::M3Palette;
 use crate::thumbs::{Thumb, Thumbnails};
 use egui::{
     pos2, vec2, Align2, Color32, CornerRadius, FontId, Id, Key, Modifiers, Pos2, Rect, RichText,
     Sense, Stroke, StrokeKind, Ui, Vec2,
 };
-use egui_material_icons::icons::*;
+use material_3_ui::format::file_size;
+use material_3_ui::icons::icons::*;
+use material_3_ui::theme::M3Palette;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
@@ -675,7 +676,7 @@ fn item(
         } else {
             format!(
                 "{} · {}",
-                format_size(tooltip_entry.size),
+                file_size(tooltip_entry.size),
                 format_time(tooltip_entry.modified)
             )
         };
@@ -851,7 +852,7 @@ fn paint_row(
         let text = if entry.is_dir {
             "—".to_string()
         } else {
-            format_size(entry.size)
+            file_size(entry.size)
         };
         ui.painter().text(
             pos2(x + 80.0, rect.center().y),
@@ -1153,92 +1154,94 @@ fn item_menu(
     if single {
         if menu_item(
             ui,
-            if entry.is_dir {
+            Some(if entry.is_dir {
                 ICON_FOLDER_OPEN
             } else {
                 ICON_OPEN_IN_NEW
-            },
+            }),
             "Open",
             "Enter",
-        )
-        .clicked()
-        {
+            false,
+        ) {
             actions.push(Action::Open(entry.path.clone()));
         }
         if entry.is_dir {
-            if menu_item(ui, ICON_TAB, "Open in new tab", "Ctrl+Enter").clicked() {
+            if menu_item(ui, Some(ICON_TAB), "Open in new tab", "Ctrl+Enter", false) {
                 actions.push(Action::OpenInNewTab(Location::Folder(entry.path.clone())));
             }
-            if menu_item(ui, ICON_TERMINAL, "Open in terminal", "").clicked() {
+            if menu_item(ui, Some(ICON_TERMINAL), "Open in terminal", "", false) {
                 actions.push(Action::OpenInTerminal(entry.path.clone()));
             }
         } else if menu_item(
             ui,
-            ICON_APPS,
+            Some(ICON_APPS),
             if config.use_dms {
                 "Open with DMS"
             } else {
                 "Open with…"
             },
             "",
-        )
-        .clicked()
-        {
+            false,
+        ) {
             actions.push(Action::OpenWith(entry.path.clone()));
         }
-        if menu_item(ui, ICON_CODE, "Open in editor", "").clicked() {
+        if menu_item(ui, Some(ICON_CODE), "Open in editor", "", false) {
             actions.push(Action::OpenInEditor(entry.path.clone()));
         }
     } else {
         let files: Vec<PathBuf> = targets.to_vec();
-        if menu_item(ui, ICON_OPEN_IN_NEW, &format!("Open {n} items"), "Enter").clicked() {
+        if menu_item(
+            ui,
+            Some(ICON_OPEN_IN_NEW),
+            &format!("Open {n} items"),
+            "Enter",
+            false,
+        ) {
             actions.extend(files.into_iter().map(Action::Open));
         }
     }
     ui.separator();
-    if menu_item(ui, ICON_CONTENT_CUT, "Cut", "Ctrl+X").clicked() {
+    if menu_item(ui, Some(ICON_CONTENT_CUT), "Cut", "Ctrl+X", false) {
         actions.push(Action::Cut(targets.to_vec()));
     }
-    if menu_item(ui, ICON_CONTENT_COPY, "Copy", "Ctrl+C").clicked() {
+    if menu_item(ui, Some(ICON_CONTENT_COPY), "Copy", "Ctrl+C", false) {
         actions.push(Action::Copy(targets.to_vec()));
     }
     if single
         && entry.is_dir
         && has_clipboard
-        && menu_item(ui, ICON_CONTENT_PASTE, "Paste into folder", "").clicked()
+        && menu_item(ui, Some(ICON_CONTENT_PASTE), "Paste into folder", "", false)
     {
         actions.push(Action::Paste(entry.path.clone()));
     }
     if menu_item(
         ui,
-        ICON_LINK,
+        Some(ICON_LINK),
         if single { "Copy path" } else { "Copy paths" },
         "",
-    )
-    .clicked()
-    {
+        false,
+    ) {
         actions.push(Action::CopyPathText(targets.to_vec()));
     }
     ui.separator();
-    if menu_item(ui, ICON_DRIVE_FILE_MOVE, "Move to…", "").clicked() {
+    if menu_item(ui, Some(ICON_DRIVE_FILE_MOVE), "Move to…", "", false) {
         actions.push(Action::MoveTo(targets.to_vec()));
     }
-    if menu_item(ui, ICON_FILE_COPY, "Copy to…", "").clicked() {
+    if menu_item(ui, Some(ICON_FILE_COPY), "Copy to…", "", false) {
         actions.push(Action::CopyTo(targets.to_vec()));
     }
-    if single && menu_item(ui, ICON_EDIT, "Rename", "F2").clicked() {
+    if single && menu_item(ui, Some(ICON_EDIT), "Rename", "F2", false) {
         actions.push(Action::StartRename(entry.path.clone()));
     }
     if single && entry.is_dir {
         let pinned = config.is_pinned(&entry.path);
         if menu_item(
             ui,
-            if pinned { ICON_KEEP_OFF } else { ICON_KEEP },
+            Some(if pinned { ICON_KEEP_OFF } else { ICON_KEEP }),
             if pinned { "Unpin" } else { "Pin to sidebar" },
             "",
-        )
-        .clicked()
-        {
+            false,
+        ) {
             actions.push(if pinned {
                 Action::Unpin(entry.path.clone())
             } else {
@@ -1247,14 +1250,20 @@ fn item_menu(
         }
     }
     ui.separator();
-    if menu_item(ui, ICON_DELETE, "Move to trash", "Delete").clicked() {
+    if menu_item(ui, Some(ICON_DELETE), "Move to trash", "Delete", false) {
         actions.push(Action::Trash(targets.to_vec()));
     }
-    if menu_item(ui, ICON_DELETE_FOREVER, "Delete permanently", "Shift+Del").clicked() {
+    if menu_item(
+        ui,
+        Some(ICON_DELETE_FOREVER),
+        "Delete permanently",
+        "Shift+Del",
+        false,
+    ) {
         actions.push(Action::DeleteForever(targets.to_vec()));
     }
     ui.separator();
-    if single && menu_item(ui, ICON_INFO, "Properties", "Alt+Enter").clicked() {
+    if single && menu_item(ui, Some(ICON_INFO), "Properties", "Alt+Enter", false) {
         actions.push(Action::Properties(entry.path.clone()));
     }
 }
@@ -1266,53 +1275,55 @@ fn background_menu(
     config: &mut Config,
     actions: &mut Vec<Action>,
 ) {
-    if menu_item(ui, ICON_CREATE_NEW_FOLDER, "New folder", "Ctrl+Shift+N").clicked() {
+    if menu_item(
+        ui,
+        Some(ICON_CREATE_NEW_FOLDER),
+        "New folder",
+        "Ctrl+Shift+N",
+        false,
+    ) {
         actions.push(Action::NewFolder(folder.to_path_buf()));
     }
-    if menu_item(ui, ICON_NOTE_ADD, "New empty file", "").clicked() {
+    if menu_item(ui, Some(ICON_NOTE_ADD), "New empty file", "", false) {
         actions.push(Action::NewFile(folder.to_path_buf()));
     }
-    if widgets::menu_item_enabled(ui, has_clipboard, ICON_CONTENT_PASTE, "Paste", "Ctrl+V")
-        .clicked()
-    {
+    if widgets::menu_item_enabled(ui, has_clipboard, ICON_CONTENT_PASTE, "Paste", "Ctrl+V") {
         actions.push(Action::Paste(folder.to_path_buf()));
     }
     ui.separator();
-    if menu_item(ui, ICON_SELECT_ALL, "Select all", "Ctrl+A").clicked() {
+    if menu_item(ui, Some(ICON_SELECT_ALL), "Select all", "Ctrl+A", false) {
         actions.push(Action::SelectAll);
     }
     let hidden = config.ui.show_hidden;
     if menu_item(
         ui,
-        if hidden {
+        Some(if hidden {
             ICON_VISIBILITY_OFF
         } else {
             ICON_VISIBILITY
-        },
+        }),
         if hidden {
             "Hide hidden files"
         } else {
             "Show hidden files"
         },
         "Ctrl+H",
-    )
-    .clicked()
-    {
+        false,
+    ) {
         config.ui.show_hidden = !hidden;
         actions.push(Action::ConfigChanged);
     }
-    if menu_item(ui, ICON_TERMINAL, "Open in terminal", "").clicked() {
+    if menu_item(ui, Some(ICON_TERMINAL), "Open in terminal", "", false) {
         actions.push(Action::OpenInTerminal(folder.to_path_buf()));
     }
     let pinned = config.is_pinned(folder);
     if menu_item(
         ui,
-        if pinned { ICON_KEEP_OFF } else { ICON_KEEP },
+        Some(if pinned { ICON_KEEP_OFF } else { ICON_KEEP }),
         if pinned { "Unpin folder" } else { "Pin folder" },
         "Ctrl+D",
-    )
-    .clicked()
-    {
+        false,
+    ) {
         actions.push(if pinned {
             Action::Unpin(folder.to_path_buf())
         } else {
@@ -1320,7 +1331,7 @@ fn background_menu(
         });
     }
     ui.separator();
-    if menu_item(ui, ICON_INFO, "Properties", "").clicked() {
+    if menu_item(ui, Some(ICON_INFO), "Properties", "", false) {
         actions.push(Action::Properties(folder.to_path_buf()));
     }
 }

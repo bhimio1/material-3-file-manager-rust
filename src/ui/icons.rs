@@ -1,10 +1,10 @@
 //! Icons and accent colors per file type.
 
 use crate::fs::{FileEntry, FileKind};
-use crate::theme::palette::blend;
-use crate::theme::M3Palette;
 use egui::Color32;
-use egui_material_icons::{icons::*, MaterialIcon};
+use material_3_ui::icons::{icons::*, MaterialIcon};
+use material_3_ui::theme::palette::blend;
+use material_3_ui::theme::M3Palette;
 
 pub fn kind_icon(kind: FileKind) -> MaterialIcon {
     match kind {
