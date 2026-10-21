@@ -1,8 +1,6 @@
 //! Navigation buttons, breadcrumb/location bar, search and view controls.
 
-use super::widgets::{
-    self, filter_chip, icon_button, menu_item, paint_icon, segmented, ICON_BLANK,
-};
+use super::widgets::{self, filter_chip, icon_button, menu_item, paint_icon, segmented};
 use super::{Action, DragPaths};
 use crate::app::App;
 use crate::config::{SortKey, ViewMode};
@@ -12,7 +10,8 @@ use crate::tab::Location;
 use egui::{
     pos2, vec2, Color32, CornerRadius, FontId, Id, Key, Modifiers, Rect, RichText, Sense, Ui,
 };
-use egui_material_icons::icons::*;
+use material_3_ui::icons::icons::*;
+use material_3_ui::sys::paths;
 use std::path::{Path, PathBuf};
 
 const BAR_H: f32 = 40.0;
@@ -213,13 +212,13 @@ fn location_bar(ui: &mut Ui, app: &mut App, actions: &mut Vec<Action>) {
         let path = path.clone();
         resp.on_hover_cursor(egui::CursorIcon::PointingHand)
             .context_menu(|ui| {
-                if menu_item(ui, ICON_OPEN_IN_NEW, "Open in new tab", "").clicked() {
+                if menu_item(ui, Some(ICON_OPEN_IN_NEW), "Open in new tab", "", false) {
                     actions.push(Action::OpenInNewTab(Location::Folder(path.clone())));
                 }
-                if menu_item(ui, ICON_CONTENT_COPY, "Copy path", "").clicked() {
+                if menu_item(ui, Some(ICON_CONTENT_COPY), "Copy path", "", false) {
                     actions.push(Action::CopyPathText(vec![path.clone()]));
                 }
-                if menu_item(ui, ICON_TERMINAL, "Open in terminal", "").clicked() {
+                if menu_item(ui, Some(ICON_TERMINAL), "Open in terminal", "", false) {
                     actions.push(Action::OpenInTerminal(path.clone()));
                 }
             });
@@ -248,7 +247,7 @@ fn location_bar(ui: &mut Ui, app: &mut App, actions: &mut Vec<Action>) {
         paint_icon(ui, ICON_MORE_HORIZ, r.center(), 18.0, p.on_surface_variant);
         egui::Popup::menu(&more).show(|ui| {
             for (label, path) in &segs[1..first_shown] {
-                if menu_item(ui, ICON_FOLDER, label, "").clicked() {
+                if menu_item(ui, Some(ICON_FOLDER), label, "", false) {
                     actions.push(Action::Navigate(Location::Folder(path.clone())));
                 }
             }
@@ -382,7 +381,7 @@ fn path_editor(ui: &mut Ui, app: &mut App, rect: Rect, actions: &mut Vec<Action>
                     ui.set_min_width(rect.width() - 24.0);
                     for s in &suggestions {
                         let label = s.to_string_lossy();
-                        if menu_item(ui, ICON_FOLDER, &label, "").clicked() {
+                        if menu_item(ui, Some(ICON_FOLDER), &label, "", false) {
                             actions.push(Action::Navigate(Location::Folder(s.clone())));
                             close = true;
                         }
@@ -402,14 +401,7 @@ fn path_editor(ui: &mut Ui, app: &mut App, rect: Rect, actions: &mut Vec<Action>
 
 /// Expand `~` and normalise away trailing slashes and `.` components.
 fn expand_tilde(s: &str) -> PathBuf {
-    let path = if s == "~" {
-        places::home()
-    } else if let Some(rest) = s.strip_prefix("~/") {
-        places::home().join(rest)
-    } else {
-        PathBuf::from(s)
-    };
-    path.components().collect()
+    paths::expand(s).components().collect()
 }
 
 // ------------------------------------------------------------------- search
@@ -584,8 +576,7 @@ fn sort_menu(ui: &mut Ui, app: &mut App, actions: &mut Vec<Action>) {
         );
         for key in SortKey::ALL {
             let selected = app.config.ui.sort_by == key;
-            let icon = if selected { ICON_CHECK } else { ICON_BLANK };
-            if menu_item(ui, icon, key.label(), "").clicked() {
+            if menu_item(ui, None, key.label(), "", selected) {
                 if selected {
                     app.config.ui.sort_ascending = !app.config.ui.sort_ascending;
                 } else {
@@ -599,28 +590,20 @@ fn sort_menu(ui: &mut Ui, app: &mut App, actions: &mut Vec<Action>) {
         let asc = app.config.ui.sort_ascending;
         if menu_item(
             ui,
-            if asc {
+            Some(if asc {
                 ICON_ARROW_UPWARD
             } else {
                 ICON_ARROW_DOWNWARD
-            },
+            }),
             if asc { "Ascending" } else { "Descending" },
             "",
-        )
-        .clicked()
-        {
+            false,
+        ) {
             app.config.ui.sort_ascending = !asc;
             actions.push(Action::ConfigChanged);
         }
         let ff = app.config.ui.folders_first;
-        if menu_item(
-            ui,
-            if ff { ICON_CHECK } else { ICON_BLANK },
-            "Folders first",
-            "",
-        )
-        .clicked()
-        {
+        if menu_item(ui, None, "Folders first", "", ff) {
             app.config.ui.folders_first = !ff;
             actions.push(Action::ConfigChanged);
         }
@@ -631,78 +614,79 @@ fn more_menu(ui: &mut Ui, app: &mut App, actions: &mut Vec<Action>) {
     let resp = icon_button(ui, ICON_MORE_VERT, "More", true);
     let folder = app.tab().folder().map(Path::to_path_buf);
     egui::Popup::menu(&resp).show(|ui| {
-        let check = |b: bool| if b { ICON_CHECK } else { ICON_BLANK };
         if menu_item(
             ui,
-            check(app.config.ui.show_hidden),
+            None,
             "Show hidden files",
             "Ctrl+H",
-        )
-        .clicked()
-        {
+            app.config.ui.show_hidden,
+        ) {
             app.config.ui.show_hidden = !app.config.ui.show_hidden;
             actions.push(Action::ConfigChanged);
         }
         if menu_item(
             ui,
-            check(app.config.group_files_by_type),
+            None,
             "Group by type",
             "Ctrl+G",
-        )
-        .clicked()
-        {
+            app.config.group_files_by_type,
+        ) {
             app.config.group_files_by_type = !app.config.group_files_by_type;
             actions.push(Action::ConfigChanged);
         }
-        if menu_item(ui, check(app.show_details), "Details pane", "F9").clicked() {
+        if menu_item(ui, None, "Details pane", "F9", app.show_details) {
             actions.push(Action::ToggleDetails);
         }
         if menu_item(
             ui,
-            check(app.config.ui.show_thumbnails),
+            None,
             "Image thumbnails",
             "",
-        )
-        .clicked()
-        {
+            app.config.ui.show_thumbnails,
+        ) {
             app.config.ui.show_thumbnails = !app.config.ui.show_thumbnails;
             actions.push(Action::ConfigChanged);
         }
         ui.separator();
         if let Some(dir) = folder {
-            if menu_item(ui, ICON_CREATE_NEW_FOLDER, "New folder", "Ctrl+Shift+N").clicked() {
+            if menu_item(
+                ui,
+                Some(ICON_CREATE_NEW_FOLDER),
+                "New folder",
+                "Ctrl+Shift+N",
+                false,
+            ) {
                 actions.push(Action::NewFolder(dir.clone()));
             }
-            if menu_item(ui, ICON_SELECT_ALL, "Select all", "Ctrl+A").clicked() {
+            if menu_item(ui, Some(ICON_SELECT_ALL), "Select all", "Ctrl+A", false) {
                 actions.push(Action::SelectAll);
             }
             let pinned = app.config.is_pinned(&dir);
             if menu_item(
                 ui,
-                if pinned { ICON_KEEP_OFF } else { ICON_KEEP },
+                Some(if pinned { ICON_KEEP_OFF } else { ICON_KEEP }),
                 if pinned { "Unpin folder" } else { "Pin folder" },
                 "Ctrl+D",
-            )
-            .clicked()
-            {
+                false,
+            ) {
                 actions.push(if pinned {
                     Action::Unpin(dir.clone())
                 } else {
                     Action::Pin(dir.clone())
                 });
             }
-            if menu_item(ui, ICON_TERMINAL, "Open in terminal", "").clicked() {
+            if menu_item(ui, Some(ICON_TERMINAL), "Open in terminal", "", false) {
                 actions.push(Action::OpenInTerminal(dir.clone()));
             }
-            if menu_item(ui, ICON_INFO, "Folder properties", "").clicked() {
+            if menu_item(ui, Some(ICON_INFO), "Folder properties", "", false) {
                 actions.push(Action::Properties(dir));
             }
             ui.separator();
         }
-        if menu_item(ui, ICON_KEYBOARD, "Keyboard shortcuts", "F1").clicked() {
+        if menu_item(ui, Some(ICON_KEYBOARD), "Keyboard shortcuts", "F1", false) {
             actions.push(Action::ShowShortcuts);
         }
-        if menu_item(ui, ICON_SETTINGS, "Settings", "Ctrl+,").clicked() {
+        if menu_item(ui, Some(ICON_SETTINGS), "Settings", "Ctrl+,", false) {
             actions.push(Action::Navigate(Location::Settings));
         }
     });

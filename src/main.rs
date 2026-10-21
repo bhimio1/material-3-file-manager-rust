@@ -4,9 +4,9 @@ mod app;
 mod cloud;
 mod config;
 mod fs;
+mod matugen;
 mod perf;
 mod tab;
-mod theme;
 mod thumbs;
 mod ui;
 

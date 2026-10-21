@@ -10,7 +10,6 @@ pub mod settings;
 pub mod sidebar;
 pub mod status_bar;
 pub mod tab_bar;
-pub mod toasts;
 pub mod toolbar;
 pub mod widgets;
 
@@ -21,12 +20,11 @@ use std::path::PathBuf;
 #[derive(Clone, Debug)]
 pub struct DragPaths(pub Vec<PathBuf>);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ToastKind {
-    Info,
-    Success,
-    Error,
-}
+pub use material_3_ui::toasts::ToastKind;
+
+/// The snackbar stack; toast buttons carry an [`Action`].
+pub type Toasts = material_3_ui::toasts::Toasts<Action>;
+pub type Toast = material_3_ui::toasts::Toast<Action>;
 
 #[derive(Clone, Debug)]
 pub enum Action {

@@ -97,6 +97,8 @@ With the color source on **Auto**, the palette comes from, in order:
 2. matugen's `theme.json`, set up as above;
 3. the seed color, in light, dark or system mode.
 
+Older config files with the color source set to `matugen` load as **Auto**, which picks the same file.
+
 ## Project layout
 
 ```
@@ -108,10 +110,12 @@ src/
   cloud.rs      Google Drive connect/mount state (rclone)
   fs/           listing & search, file jobs, watcher, apps, places, portal,
                 rclone wrapper (cloud.rs)
-  theme/        M3 palette (seed / matugen) → egui style
+  matugen.rs    the matugen template and config snippet
   ui/           sidebar, tabs, toolbar, file view, details, dashboard,
-                settings, dialogs, toasts, M3 widgets
+                settings, dialogs
 ```
+
+The palette, egui style, fonts, Material 3 widgets, page scaffolding, toasts and the Appearance settings come from the shared [material-3-ui](https://github.com/bhimio1/material-3-ui) crate.
 
 Run the tests with `cargo test`. Set `M3FM_PERF=1` to print per-second frame timings, the top repaint causes, and the cost of directory listings to stderr.
 
@@ -119,4 +123,4 @@ Run the tests with `cargo test`. Set `M3FM_PERF=1` to print per-second frame tim
 
 MIT, see [LICENSE](LICENSE).
 
-Fonts: Inter (SIL OFL 1.1, see `assets/fonts/LICENSE-Inter.txt`). Icons: Material Symbols, via `egui_material_icons`.
+Fonts: Inter (SIL OFL 1.1, see `assets/fonts/LICENSE-Inter.txt`). Icons: Material Symbols, via `egui_material_icons`. Both are built in through material-3-ui.

@@ -4,12 +4,13 @@ use super::icons::{entry_icon, kind_color};
 use super::widgets::{self, paint_icon, ButtonKind};
 use super::Action;
 use crate::app::App;
-use crate::fs::entry::{format_size, format_time};
+use crate::fs::entry::format_time;
 use crate::fs::places;
 use crate::fs::{scanner, FileEntry, FileKind};
 use crate::thumbs::Thumb;
 use egui::{vec2, CornerRadius, Frame, Id, Margin, Rect, RichText, Sense, Ui, Vec2};
-use egui_material_icons::icons::*;
+use material_3_ui::format::file_size;
+use material_3_ui::icons::icons::*;
 use std::sync::Arc;
 
 const TEXT_PREVIEW_BYTES: usize = 12 * 1024;
@@ -171,7 +172,7 @@ fn single(ui: &mut Ui, app: &mut App, entry: &FileEntry, actions: &mut Vec<Actio
     ui.add_space(6.0);
 
     if !entry.is_dir {
-        meta_row(ui, "Size", &format_size(entry.size));
+        meta_row(ui, "Size", &file_size(entry.size));
     } else {
         let count = cached(ui, ("count", &entry.path, entry.modified), || {
             std::fs::read_dir(&entry.path).map(|rd| rd.count()).ok()
@@ -269,7 +270,7 @@ fn multiple(ui: &mut Ui, app: &mut App, preview: &[FileEntry], summary: Selectio
     meta_row(
         ui,
         "Files",
-        &format!("{} ({})", summary.files, format_size(summary.bytes)),
+        &format!("{} ({})", summary.files, file_size(summary.bytes)),
     );
     if summary.folders > 0 {
         meta_row(ui, "Folders", &summary.folders.to_string());
@@ -317,13 +318,13 @@ fn folder_summary(ui: &mut Ui, app: &mut App, actions: &mut Vec<Action>) {
         .filter(|e| !e.is_dir)
         .map(|e| e.size)
         .sum();
-    meta_row(ui, "Files size", &format_size(total));
+    meta_row(ui, "Files size", &file_size(total));
     meta_row(ui, "Location", &places::tilde(&folder));
     if let Some(d) = app.config.cloud_drive_for(&folder) {
         if let Some(q) = app.cloud.quota.get(&d.remote) {
             ui.add_space(10.0);
             ui.label(
-                RichText::new(format!("{} — {} free", d.name, format_size(q.free)))
+                RichText::new(format!("{} — {} free", d.name, file_size(q.free)))
                     .size(12.5)
                     .color(p.on_surface_variant),
             );
@@ -336,7 +337,7 @@ fn folder_summary(ui: &mut Ui, app: &mut App, actions: &mut Vec<Action>) {
             RichText::new(format!(
                 "{} — {} free",
                 drive.name,
-                format_size(drive.available)
+                file_size(drive.available)
             ))
             .size(12.5)
             .color(p.on_surface_variant),

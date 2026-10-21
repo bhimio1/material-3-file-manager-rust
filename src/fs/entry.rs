@@ -167,10 +167,6 @@ pub fn plural(n: impl Into<u64>, noun: &str) -> String {
     }
 }
 
-pub fn format_size(bytes: u64) -> String {
-    humansize::format_size(bytes, humansize::DECIMAL)
-}
-
 pub fn format_time(t: Option<SystemTime>) -> String {
     let Some(t) = t else { return "—".into() };
     let dt: chrono::DateTime<chrono::Local> = t.into();

@@ -6,7 +6,7 @@ use crate::app::App;
 use crate::fs::places;
 use crate::tab::Location;
 use egui::{pos2, vec2, CornerRadius, FontId, Rect, Sense, Ui};
-use egui_material_icons::icons::*;
+use material_3_ui::icons::icons::*;
 
 const TAB_W: f32 = 200.0;
 const TAB_H: f32 = 36.0;
@@ -127,13 +127,17 @@ pub fn show(ui: &mut Ui, app: &mut App) {
                             });
                         }
                         response.context_menu(|ui| {
-                            if widgets::menu_item(ui, ICON_TAB, "New tab", "Ctrl+T").clicked() {
+                            if widgets::menu_item(ui, Some(ICON_TAB), "New tab", "Ctrl+T", false) {
                                 actions.push(Action::NewTab);
                             }
                             if let Location::Folder(path) = &tab.location {
-                                if widgets::menu_item(ui, ICON_CONTENT_COPY, "Duplicate tab", "")
-                                    .clicked()
-                                {
+                                if widgets::menu_item(
+                                    ui,
+                                    Some(ICON_CONTENT_COPY),
+                                    "Duplicate tab",
+                                    "",
+                                    false,
+                                ) {
                                     actions.push(Action::ActivateTab(i));
                                     actions
                                         .push(Action::OpenInNewTab(Location::Folder(path.clone())));
@@ -146,9 +150,7 @@ pub fn show(ui: &mut Ui, app: &mut App) {
                                 ICON_CLOSE,
                                 "Close tab",
                                 "Ctrl+W",
-                            )
-                            .clicked()
-                            {
+                            ) {
                                 actions.push(Action::CloseTab(i));
                             }
                             if widgets::menu_item_enabled(
@@ -157,9 +159,7 @@ pub fn show(ui: &mut Ui, app: &mut App) {
                                 ICON_TAB_CLOSE,
                                 "Close other tabs",
                                 "",
-                            )
-                            .clicked()
-                            {
+                            ) {
                                 for j in (0..n).rev().filter(|j| *j != i) {
                                     actions.push(Action::CloseTab(j));
                                 }

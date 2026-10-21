@@ -1,6 +1,6 @@
 //! Well-known folders and mounted drives for the sidebar and dashboard.
 
-use egui_material_icons::{icons::*, MaterialIcon};
+use material_3_ui::icons::{icons::*, MaterialIcon};
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Debug)]
@@ -10,9 +10,7 @@ pub struct Place {
     pub icon: MaterialIcon,
 }
 
-pub fn home() -> PathBuf {
-    dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"))
-}
+pub use material_3_ui::sys::paths::{home, tilde};
 
 /// XDG user directories that exist on this machine.
 pub fn standard_places() -> Vec<Place> {
@@ -50,16 +48,6 @@ pub fn display_name(path: &Path) -> String {
     path.file_name()
         .map(|n| n.to_string_lossy().into_owned())
         .unwrap_or_else(|| path.to_string_lossy().into_owned())
-}
-
-/// Path with the home directory shown as `~`.
-pub fn tilde(path: &Path) -> String {
-    let home = home();
-    match path.strip_prefix(&home) {
-        Ok(rel) if rel.as_os_str().is_empty() => "~".into(),
-        Ok(rel) => format!("~/{}", rel.display()),
-        Err(_) => path.display().to_string(),
-    }
 }
 
 /// Icon for a folder, using the special-folder icon when it is one.

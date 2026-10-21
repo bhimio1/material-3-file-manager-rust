@@ -3,11 +3,11 @@
 use super::widgets::{self, menu_item, nav_item, section_header};
 use super::{Action, DragPaths};
 use crate::app::App;
-use crate::fs::entry::format_size;
 use crate::fs::places;
 use crate::tab::Location;
 use egui::{pos2, vec2, CornerRadius, Rect, Response, RichText, Sense, Ui};
-use egui_material_icons::icons::*;
+use material_3_ui::format::file_size;
+use material_3_ui::icons::icons::*;
 use std::path::{Path, PathBuf};
 
 /// Accept files dropped from the file view onto a sidebar destination.
@@ -23,21 +23,21 @@ fn drop_target(ui: &Ui, response: &Response, target: &Path, actions: &mut Vec<Ac
 
 fn folder_menu(response: &Response, path: &Path, pinned: bool, actions: &mut Vec<Action>) {
     response.context_menu(|ui| {
-        if menu_item(ui, ICON_OPEN_IN_NEW, "Open in new tab", "").clicked() {
+        if menu_item(ui, Some(ICON_OPEN_IN_NEW), "Open in new tab", "", false) {
             actions.push(Action::OpenInNewTab(Location::Folder(path.to_path_buf())));
         }
-        if menu_item(ui, ICON_TERMINAL, "Open in terminal", "").clicked() {
+        if menu_item(ui, Some(ICON_TERMINAL), "Open in terminal", "", false) {
             actions.push(Action::OpenInTerminal(path.to_path_buf()));
         }
         ui.separator();
         if pinned {
-            if menu_item(ui, ICON_KEEP_OFF, "Unpin", "").clicked() {
+            if menu_item(ui, Some(ICON_KEEP_OFF), "Unpin", "", false) {
                 actions.push(Action::Unpin(path.to_path_buf()));
             }
-        } else if menu_item(ui, ICON_KEEP, "Pin", "").clicked() {
+        } else if menu_item(ui, Some(ICON_KEEP), "Pin", "", false) {
             actions.push(Action::Pin(path.to_path_buf()));
         }
-        if menu_item(ui, ICON_INFO, "Properties", "").clicked() {
+        if menu_item(ui, Some(ICON_INFO), "Properties", "", false) {
             actions.push(Action::Properties(path.to_path_buf()));
         }
     });
@@ -45,7 +45,7 @@ fn folder_menu(response: &Response, path: &Path, pinned: bool, actions: &mut Vec
 
 fn folder_item(
     ui: &mut Ui,
-    icon: egui_material_icons::MaterialIcon,
+    icon: material_3_ui::icons::MaterialIcon,
     label: &str,
     path: &Path,
     current: Option<&Path>,
@@ -107,18 +107,14 @@ pub fn show(ui: &mut Ui, app: &mut App) {
             ICON_CREATE_NEW_FOLDER,
             "New folder",
             "Ctrl+Shift+N",
-        )
-        .clicked()
-        {
+        ) {
             actions.extend(dir.clone().map(Action::NewFolder));
         }
-        if widgets::menu_item_enabled(ui, dir.is_some(), ICON_NOTE_ADD, "New empty file", "")
-            .clicked()
-        {
+        if widgets::menu_item_enabled(ui, dir.is_some(), ICON_NOTE_ADD, "New empty file", "") {
             actions.extend(dir.clone().map(Action::NewFile));
         }
         ui.separator();
-        if menu_item(ui, ICON_TAB, "New tab", "Ctrl+T").clicked() {
+        if menu_item(ui, Some(ICON_TAB), "New tab", "Ctrl+T", false) {
             actions.push(Action::NewTab);
         }
     });
@@ -208,8 +204,8 @@ pub fn show(ui: &mut Ui, app: &mut App) {
                     .on_hover_text(format!(
                         "{}\n{} free of {} · {}",
                         drive.mount.display(),
-                        format_size(drive.available),
-                        format_size(drive.total),
+                        file_size(drive.available),
+                        file_size(drive.total),
                         drive.file_system
                     ));
                 usage_bar(ui, response.rect, drive.used_fraction());
@@ -292,8 +288,8 @@ fn cloud_section(ui: &mut Ui, app: &App, current: Option<&Path>, actions: &mut V
             (None, true, Some(q)) => format!(
                 "{}\n{} free of {}",
                 drive.mount_point.display(),
-                format_size(q.free),
-                format_size(q.total)
+                file_size(q.free),
+                file_size(q.total)
             ),
             (None, true, None) => drive.mount_point.display().to_string(),
         };
@@ -309,22 +305,22 @@ fn cloud_section(ui: &mut Ui, app: &App, current: Option<&Path>, actions: &mut V
         }
         r.context_menu(|ui| {
             if mounted {
-                if menu_item(ui, ICON_OPEN_IN_NEW, "Open in new tab", "").clicked() {
+                if menu_item(ui, Some(ICON_OPEN_IN_NEW), "Open in new tab", "", false) {
                     actions.push(Action::OpenInNewTab(Location::Folder(
                         drive.mount_point.clone(),
                     )));
                 }
-                if menu_item(ui, ICON_EJECT, "Unmount", "").clicked() {
+                if menu_item(ui, Some(ICON_EJECT), "Unmount", "", false) {
                     actions.push(Action::CloudUnmount(drive.remote.clone()));
                 }
-            } else if menu_item(ui, ICON_CLOUD_SYNC, "Mount", "").clicked() {
+            } else if menu_item(ui, Some(ICON_CLOUD_SYNC), "Mount", "", false) {
                 actions.push(Action::CloudMount(drive.remote.clone()));
             }
-            if menu_item(ui, ICON_PUBLIC, "Open drive.google.com", "").clicked() {
+            if menu_item(ui, Some(ICON_PUBLIC), "Open drive.google.com", "", false) {
                 actions.push(Action::OpenUrl(crate::fs::cloud::DRIVE_WEB_URL.into()));
             }
             ui.separator();
-            if menu_item(ui, ICON_CLOUD_OFF, "Disconnect…", "").clicked() {
+            if menu_item(ui, Some(ICON_CLOUD_OFF), "Disconnect…", "", false) {
                 actions.push(Action::CloudDisconnect(drive.remote.clone()));
             }
         });
